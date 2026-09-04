@@ -2,7 +2,6 @@ import { Box, Typography, Container, alpha, Fade, Divider } from '@mui/material'
 import { Link } from 'react-router-dom';
 import { useSiteStore } from '@/stores/siteStore';
 import { resolveSpacingConfig } from '@/utils/spacingConfig';
-import { APP_VERSION, SITE_NAME, SITE_HOMEPAGE_URL } from '@/config';
 
 export function Footer() {
   const { config } = useSiteStore();
@@ -40,26 +39,6 @@ export function Footer() {
             </Typography>
 
           ) : null}
-          <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'break-word', maxWidth: '100%' }}>
-            © {new Date().getFullYear()} {APP_VERSION} Powered by{' '}
-            <Box
-              component="a"
-              href={SITE_HOMEPAGE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              sx={{
-                color: (theme) => alpha(theme.palette.primary.main, 0.8),
-                textDecoration: 'none',
-                fontStyle: 'italic',
-                '&:hover': {
-                  color: (theme) => theme.palette.primary.main,
-                },
-              }}
-            >
-              {SITE_NAME}
-            </Box>
-
-          </Typography>
 
           <Divider sx={{ width: '100%', my: 1, opacity: 0.5 }} />
           <Box

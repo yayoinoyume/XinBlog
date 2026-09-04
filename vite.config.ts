@@ -2,12 +2,14 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+const OUT_DIR = 'dist'
+
 function cleanOldAssets(): Plugin {
   return {
     name: 'clean-old-assets',
     async writeBundle(_options, bundle) {
       const fs = await import('fs/promises')
-      const outDir = path.resolve(__dirname, '../deploy')
+      const outDir = path.resolve(__dirname, OUT_DIR)
       const assetsDir = path.join(outDir, 'assets')
       const emitted = new Set<string>(Object.keys(bundle))
       const files = await fs.readdir(assetsDir).catch(() => [] as string[])
@@ -34,7 +36,7 @@ export default defineConfig({
     host: true,
   },
   build: {
-    outDir: '../deploy',
-    emptyOutDir: false,
+    outDir: OUT_DIR,
+    emptyOutDir: true,
   },
 })
