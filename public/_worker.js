@@ -532,6 +532,21 @@ async function getSetting(env, key) {
   }
 }
 
+async function getSettingsBatch(env, keys) {
+  const db = getConfigDb(env);
+  const rows = await db.prepare(
+    `SELECT key, value FROM settings WHERE key IN (${keys.map(() => '?').join(',')})`
+  ).bind(...keys).all();
+  const byKey = new Map((rows.results || []).map((r) => [r.key, r.value]));
+  const out = {};
+  for (const k of keys) {
+    const raw = byKey.get(k);
+    if (raw === undefined || raw === null || raw === '') { out[k] = null; continue; }
+    try { out[k] = JSON.parse(raw); } catch { out[k] = null; }
+  }
+  return out;
+}
+
 async function setSetting(env, key, value) {
   const db = getConfigDb(env);
   await db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
@@ -736,14 +751,13 @@ const defaultFriendsConfig = {
 };
 
 async function getSiteConfigObject(env) {
-  const site = (await getSetting(env, 'site')) || {};
-  const hero = (await getSetting(env, 'hero')) || {};
-  const about = (await getSetting(env, 'about')) || {};
-  const friends = (await getSetting(env, 'friends')) || {};
-  const ai = (await getSetting(env, 'ai')) || {};
-  
-  
-  const activeThemeId = (await getSetting(env, 'active_theme')) || '';
+  const s = await getSettingsBatch(env, ['site', 'hero', 'about', 'friends', 'ai', 'active_theme']);
+  const site = s.site || {};
+  const hero = s.hero || {};
+  const about = s.about || {};
+  const friends = s.friends || {};
+  const ai = s.ai || {};
+  const activeThemeId = s.active_theme || '';
   const cardTheme = activeThemeId
     ? { ...defaultSiteConfig.cardTheme, ...(site.cardTheme || {}) }
     : defaultSiteConfig.cardTheme;
@@ -1899,11 +1913,7 @@ async function getMedia(env, id, request, ctx) {
 
   let binary;
   try {
-    binary = Uint8Array.from(
-      atob(base64)
-        .split('')
-        .map((c) => c.charCodeAt(0))
-    );
+    binary = base64ToBytes(base64);
   } catch (e) {
     return new Response('Media decode failed', { status: 500 });
   }
