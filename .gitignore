@@ -45,3 +45,12 @@ coverage
 *.njsproj
 *.sln
 *.sw?
+
+# 本地开发工具（wrangler 模拟器，不入库）
+.dev.vars
+.wrangler/
+wrangler.toml
+
+# 优化方案文档（本地 .bak 方式管理，不入库）
+docs/OPTIMIZATION_PLAN.md
+docs/FIX_PLAN.md
