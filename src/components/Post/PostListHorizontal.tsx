@@ -9,6 +9,8 @@ interface PostListHorizontalProps {
   theme?: import('@/types').PostCardThemeConfig;
 }
 
+const HORIZONTAL_HEIGHT = { xs: 280, sm: 320, md: 360 };
+
 export function PostListHorizontal({ posts, theme }: PostListHorizontalProps) {
   const themeMui = useTheme();
   const isDesktop = useMediaQuery(themeMui.breakpoints.up('md'));
@@ -25,7 +27,7 @@ export function PostListHorizontal({ posts, theme }: PostListHorizontalProps) {
           theme={theme}
           forcedLayout="horizontal"
           index={i}
-          height={{ xs: 280, sm: 320, md: 360 }}
+          height={HORIZONTAL_HEIGHT}
         />
       ))}
     </Box>
