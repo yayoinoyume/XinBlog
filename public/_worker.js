@@ -885,6 +885,7 @@ async function listPosts(env, url) {
   const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
   const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '10', 10)));
   const tag = url.searchParams.get('tag');
+  const lite = url.searchParams.get('fields') === 'lite';
   const offset = (page - 1) * limit;
 
   let posts;
@@ -894,7 +895,7 @@ async function listPosts(env, url) {
     const tagRow = await env.DB_POSTS.prepare('SELECT id FROM tags WHERE slug = ?').bind(tag).first();
     if (!tagRow) return jsonResponse(0, { list: [], total: 0, page, limit });
     posts = await env.DB_POSTS.prepare(
-      `SELECT p.id, p.title, p.slug, p.excerpt, p.content, p.cover_base64, p.author_id, p.status, p.views, p.reading_time, p.created_at, p.updated_at
+      `SELECT p.id, p.title, p.slug, p.excerpt, ${lite ? '' : 'p.content, '}p.cover_base64, p.author_id, p.status, p.views, p.reading_time, p.created_at, p.updated_at
        FROM posts p
        JOIN post_tags pt ON p.id = pt.post_id
        WHERE pt.tag_id = ? AND p.status = 'published'
@@ -911,7 +912,7 @@ async function listPosts(env, url) {
     total = countRow.c;
   } else {
     posts = await env.DB_POSTS.prepare(
-      `SELECT id, title, slug, excerpt, content, cover_base64, author_id, status, views, reading_time, created_at, updated_at
+      `SELECT id, title, slug, excerpt, ${lite ? '' : 'content, '}cover_base64, author_id, status, views, reading_time, created_at, updated_at
        FROM posts WHERE status = 'published' ORDER BY created_at DESC LIMIT ? OFFSET ?`
     )
       .bind(limit, offset)
