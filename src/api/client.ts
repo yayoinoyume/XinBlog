@@ -78,6 +78,8 @@ function invalidateRelatedCaches(path: string) {
     related.push('/api/v1/tags');
   } else if (base === '/api/v1/admin/settings/interaction') {
     related.push('/api/v1/settings/interaction');
+  } else if (base === '/api/v1/admin/settings') {
+    related.push('/api/v1/site');
   } else if (base.startsWith('/api/v1/admin/settings/')) {
     
     const settingKey = base.replace('/api/v1/admin/settings/', '');
@@ -250,8 +252,8 @@ export async function apiFetch<T = unknown>(path: string, options: CustomRequest
   return result;
 }
 
-export async function apiGet<T = unknown>(path: string) {
-  return apiFetch<T>(path, { method: 'GET' });
+export async function apiGet<T = unknown>(path: string, init?: Pick<RequestInit, 'cache'>) {
+  return apiFetch<T>(path, { method: 'GET', ...init });
 }
 
 export async function apiPost<T = unknown>(path: string, body: unknown, options: Omit<RequestInit, 'method' | 'body'> = {}) {
