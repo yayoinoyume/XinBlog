@@ -1,7 +1,7 @@
 
 
 
-const CACHE_NAME = 'xinblog-shell-v2';
+const CACHE_NAME = 'xinblog-shell-v3';
 const SHELL_ASSETS = ['/', '/index.html'];
 
 self.addEventListener('install', (event) => {
@@ -52,7 +52,7 @@ self.addEventListener('fetch', (event) => {
   
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request).catch(() => caches.match('/index.html') || caches.match('/'))
+      fetch(request).catch(async () => (await caches.match('/index.html')) ?? (await caches.match('/')))
     );
     return;
   }
