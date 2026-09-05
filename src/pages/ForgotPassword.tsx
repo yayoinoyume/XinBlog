@@ -90,7 +90,6 @@ export function ForgotPassword() {
     setError('');
     try {
       const result = await sendForgotCode(username, email, payload);
-      if (result.debug) console.log('[forgot-code] 调试信息：', result.debug);
       if (result.ok) {
         setSuccess(result.msg || '验证码已发送，请查收邮箱');
         setStep(2);

@@ -375,7 +375,7 @@ export function Home() {
                       </Typography>
 
                       <Typography variant="body2" color="text.secondary">
-                        换个关键词试试，或上传一篇把
+                        换个关键词试试，或上传一篇吧
                       </Typography>
 
                     </Box>

@@ -32,6 +32,9 @@ compile.log
 .cache
 coverage
 
+# 本地备份目录（.bak 时间戳快照，不入库）
+.backups
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
