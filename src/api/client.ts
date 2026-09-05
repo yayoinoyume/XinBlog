@@ -181,12 +181,17 @@ async function fetchInternal<T = unknown>(path: string, options: RequestInit): P
 }
 
 export function peekCache<T = unknown>(path: string): { data: T | null; hit: boolean } {
-  const key = getCacheKey('GET', path);
+  const prefix = getCacheKey('GET', stripQuery(path));
   const ttl = getCacheTtl(path);
-  const cached = readCache<T>(key, ttl);
-  if (cached && cached.code === 0) {
-    return { data: cached.data, hit: true };
+  let best: CacheEntry<T> | null = null;
+  for (const [key, entry] of memoryCache) {
+    if (!key.startsWith(prefix)) continue;
+    const rest = key.slice(prefix.length);
+    if (rest && rest[0] !== '?') continue; // 只匹配 query 变体，不误伤子路径
+    if (entry.promise || Date.now() - entry.ts > ttl) continue;
+    if (!best || entry.ts > best.ts) best = entry as CacheEntry<T>;
   }
+  if (best && best.data.code === 0) return { data: best.data.data, hit: true };
   return { data: null, hit: false };
 }
 
