@@ -1010,7 +1010,9 @@ async function checkRateLimit(env, key, limit, windowSec) {
   }
   
   if (Math.random() < 0.02) {
-    await db.prepare('DELETE FROM rate_limits WHERE window_start < ?').bind(bucket - 3).run();
+    // 不同 windowSec 的桶量纲不同，限定同量纲区间清理，避免短窗口调用抹掉长窗口计数
+    // ponytail: 假设各调用点 windowSec 相差 >=6 倍（现 60/600/3600/86400 满足）；引入相近窗口时改为 key 存 window_sec 列
+    await db.prepare('DELETE FROM rate_limits WHERE window_start < ? AND window_start > ?').bind(bucket - 3, bucket - 100).run();
   }
   return row.count <= limit;
 }
@@ -1756,6 +1758,8 @@ async function clearAdminActiveTheme(request, env, user) {
 
 const MAX_MEDIA_CHUNK_SIZE = 80 * 1024; 
 
+const ALLOWED_IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/bmp']);
+
 async function uploadMedia(request, env, user) {
   const body = await request.json();
   const name = String(body.name || 'image.jpg');
@@ -1766,7 +1770,7 @@ async function uploadMedia(request, env, user) {
   const height = body.height ? parseInt(body.height, 10) : null;
 
   if (!base64) return jsonResponse(400, null, '图片数据为空');
-  if (!mimeType.startsWith('image/')) return jsonResponse(400, null, '仅支持图片');
+  if (!ALLOWED_IMAGE_MIME.has(mimeType)) return jsonResponse(400, null, '仅支持 JPG/PNG/GIF/WebP/AVIF/BMP 图片（不支持 SVG）');
   if (base64.length > MAX_MEDIA_CHUNK_SIZE) {
     return jsonResponse(413, null, '图片超过单接口上限，请使用分片上传');
   }
@@ -1793,7 +1797,7 @@ async function initMediaUpload(request, env, user) {
 
   if (!chunkCount || chunkCount <= 0) return jsonResponse(400, null, '分片数量无效');
   if (!size) return jsonResponse(400, null, '文件大小无效');
-  if (!mimeType.startsWith('image/')) return jsonResponse(400, null, '仅支持图片');
+  if (!ALLOWED_IMAGE_MIME.has(mimeType)) return jsonResponse(400, null, '仅支持 JPG/PNG/GIF/WebP/AVIF/BMP 图片（不支持 SVG）');
 
   const result = await env.DB_MEDIA.prepare(
     'INSERT INTO media (name, mime_type, size, base64_data, width, height, chunk_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -1905,7 +1909,9 @@ async function getMedia(env, id, request, ctx) {
   }
   response = new Response(binary, {
     headers: {
-      'Content-Type': mimeType,
+      'Content-Type': ALLOWED_IMAGE_MIME.has(mimeType) ? mimeType : 'application/octet-stream',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Disposition': ALLOWED_IMAGE_MIME.has(mimeType) ? 'inline' : 'attachment',
       'Cache-Control': 'public, max-age=86400',
       'Content-Length': String(binary.length),
     },
@@ -2098,7 +2104,7 @@ async function updateAdminMedia(request, env, user) {
   const name = body.name ? String(body.name) : row.name;
 
   if (!rawBase64) return jsonResponse(400, null, '图片数据为空');
-  if (!mimeType.startsWith('image/')) return jsonResponse(400, null, '仅支持图片');
+  if (!ALLOWED_IMAGE_MIME.has(mimeType)) return jsonResponse(400, null, '仅支持 JPG/PNG/GIF/WebP/AVIF/BMP 图片（不支持 SVG）');
 
   
   const base64 = rawBase64.includes(',') ? rawBase64.split(',')[1] : rawBase64;
@@ -3362,6 +3368,7 @@ async function resetPassword(request, env) {
     .bind(hash, salt, now(), user.id)
     .run();
   await env.DB_USERS.prepare('DELETE FROM verify_codes WHERE email = ?').bind(email.toLowerCase()).run();
+  await env.DB_USERS.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').bind(user.id).run();
   return jsonResponse(0, null, '密码已重置，请使用新密码登录');
 }
 
@@ -3396,6 +3403,7 @@ async function changePassword(request, env, user) {
   )
     .bind(hash, salt, now(), user.id)
     .run();
+  await env.DB_USERS.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').bind(user.id).run();
   return jsonResponse(0, null, '密码已修改');
 }
 
@@ -3532,6 +3540,9 @@ async function createComment(request, env, user) {
 
   const settings = (await getSetting(env, 'interaction')) || {};
   if (settings.commentsEnabled === false) return jsonResponse(403, null, '评论功能已关闭');
+
+  if (!(await checkRateLimit(env, `cmt:uid:${user.id}`, 5, 300)))
+    return jsonResponse(429, null, '评论过于频繁，请稍后再试', 429);
 
   const body = await request.json();
   const content = String(body.content || '').trim();
@@ -3799,6 +3810,9 @@ async function createLike(request, env, user) {
 
   const settings = (await getSetting(env, 'interaction')) || {};
   if (settings.likesEnabled === false) return jsonResponse(403, null, '点赞功能已关闭');
+
+  if (!(await checkRateLimit(env, `like:uid:${user.id}`, 30, 3600)))
+    return jsonResponse(429, null, '点赞过于频繁，请稍后再试', 429);
 
   try {
     await env.DB_POSTS.prepare('INSERT INTO likes (post_id, user_id, created_at) VALUES (?, ?, ?)')
@@ -4390,6 +4404,10 @@ async function listMyMessages(request, env, user) {
 async function createMessage(request, env, user) {
   const settings = (await getSetting(env, 'message_wall')) || {};
   if (settings.enabled === false) return jsonResponse(403, null, '留言墙功能已关闭');
+
+  const msgIp = getClientIp(request);
+  if (!(await checkRateLimit(env, `msg:ip:${msgIp}`, user ? 20 : 5, 3600)))
+    return jsonResponse(429, null, '留言过于频繁，请稍后再试', 429);
 
   const body = await request.json();
   const content = String(body.content || '').trim();
@@ -5963,13 +5981,13 @@ const SKILL_WRITE = {
 
 const writeConfirmMap = new Map();
 
-function waitWriteConfirm(token, timeoutMs = 5 * 60 * 1000) {
+function waitWriteConfirm(token, userId, timeoutMs = 5 * 60 * 1000) {
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       writeConfirmMap.delete(token);
       resolve({ approved: false, reason: '确认超时，操作未执行' });
     }, timeoutMs);
-    writeConfirmMap.set(token, { resolve, timer });
+    writeConfirmMap.set(token, { resolve, timer, userId: String(userId == null ? '' : userId) });
   });
 }
 
@@ -5980,6 +5998,7 @@ async function confirmWriteAction(request, env, user) {
   const approved = body.approved !== false;
   const pending = token && writeConfirmMap.get(token);
   if (!pending) return jsonResponse(404, null, '确认请求不存在或已超时', 404);
+  if (pending.userId !== String(user.id)) return jsonResponse(403, null, '无权确认该操作', 403);
   clearTimeout(pending.timer);
   writeConfirmMap.delete(token);
   pending.resolve({ approved });
@@ -6633,10 +6652,10 @@ async function executeWriteSkill(skillId, args, ctx) {
   if (!ctx.send || !ctx.waitWriteConfirm) {
     return { ok: false, needConfirm: true, error: '此操作需要确认后才能执行' };
   }
-  const token = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  const token = crypto.randomUUID();
   const target = describeWriteAction(skillId, args);
   ctx.send('confirm_request', { token, skill: skillId, target, params: summarizeToolArgsJson(args) });
-  const decision = await ctx.waitWriteConfirm(token);
+  const decision = await ctx.waitWriteConfirm(token, ctx.user && ctx.user.id);
   if (!decision || !decision.approved) {
     return { ok: false, cancelled: true, error: decision && decision.reason ? decision.reason : '用户取消了此操作' };
   }
@@ -7961,7 +7980,9 @@ export default {
       
       
       if (path.startsWith('/api/chat/')) {
-        
+        const chatSettings = (await getSetting(env, 'chat')) || {};
+        if (chatSettings.enabled === false) return rejectChatSocket('聊天功能已关闭');
+
         if (path === '/api/chat/check-nickname') {
           const name = (url.searchParams.get('name') || '').trim();
           if (!name) return jsonResponse(400, null, '昵称不能为空', 400);
@@ -7982,6 +8003,9 @@ export default {
         
         let identity = null;
         let forwarded = new Request(chatUrl.toString(), request);
+        forwarded.headers.delete('x-user-id');
+        forwarded.headers.delete('x-username');
+        forwarded.headers.delete('x-room-max-users');
         if (roomKey === PUBLIC_CHAT_ROOM_KEY) {
           const guestName = (chatUrl.searchParams.get('nickname') || '').trim();
           

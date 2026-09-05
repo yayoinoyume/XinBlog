@@ -72,7 +72,7 @@ async function uploadChunks(name: string, pureBase64: string, mimeType: string, 
 export async function uploadMedia(name: string, base64: string, options?: UploadMediaOptions): Promise<UploadMediaResult> {
   const { mimeType, pureBase64, size } = parseBase64(base64);
   if (!pureBase64) throw new Error('图片数据为空');
-  if (!mimeType.startsWith('image/')) throw new Error('仅支持图片文件');
+  if (!/^image\/(jpeg|png|gif|webp|avif|bmp)$/.test(mimeType)) throw new Error('仅支持 JPG/PNG/GIF/WebP/AVIF/BMP 图片（不支持 SVG）');
 
   
   const finalName = mimeType === 'image/jpeg' ? name.replace(/\.[^.]+$/, '.jpg') : name;
