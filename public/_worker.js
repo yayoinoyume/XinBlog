@@ -1760,7 +1760,8 @@ async function uploadMedia(request, env, user) {
   const body = await request.json();
   const name = String(body.name || 'image.jpg');
   const mimeType = String(body.mimeType || 'image/jpeg');
-  const base64 = String(body.base64 || '');
+  const rawBase64 = String(body.base64 || '');
+  const base64 = rawBase64.includes(',') ? rawBase64.split(',')[1] : rawBase64;
   const width = body.width ? parseInt(body.width, 10) : null;
   const height = body.height ? parseInt(body.height, 10) : null;
 
@@ -1811,7 +1812,8 @@ async function uploadMediaChunk(request, env, user) {
 
   const body = await request.json();
   const chunkIndex = parseInt(body.chunkIndex ?? body.chunk_index ?? '0', 10);
-  const chunkData = String(body.chunkData ?? body.chunk_data ?? '');
+  const rawChunk = String(body.chunkData ?? body.chunk_data ?? '');
+  const chunkData = rawChunk.includes(',') ? rawChunk.split(',')[1] : rawChunk;
 
   if (!chunkData) return jsonResponse(400, null, '分片数据为空');
   if (chunkData.length > MAX_MEDIA_CHUNK_SIZE) return jsonResponse(413, null, '分片过大');
@@ -1872,6 +1874,7 @@ async function getMedia(env, id, request, ctx) {
 
   const mimeType = String(row.mime_type || 'image/jpeg');
   let base64 = String(row.base64_data || '');
+  if (base64.startsWith('data:') && base64.includes(',')) base64 = base64.slice(base64.indexOf(',') + 1);
 
   if (row.chunk_count > 0) {
     const chunkRows = await env.DB_MEDIA.prepare(
@@ -3066,7 +3069,8 @@ async function verifyHuman(request, env, body) {
   if (mode === 'hcaptcha') {
     return verifyHCaptcha(authSettings.hcaptchaSecret, body.hcaptchaToken, getClientIp(request));
   }
-  return true;
+  console.warn(`[auth] 未知的 verificationMode: ${JSON.stringify(mode)}，按 fail-closed 拒绝`);
+  return false;
 }
 
 
@@ -3381,7 +3385,7 @@ async function changePassword(request, env, user) {
     .bind(user.id)
     .first();
   if (!row) return jsonResponse(404, null, '用户不存在');
-  if (row.status === 'banned') return jsonResponse(403, null, '账号已被禁用');
+  if (row.status !== 1) return jsonResponse(403, null, '账号已被禁用');
 
   const valid = await verifyPassword(currentPassword, row.password_salt, row.password_hash);
   if (!valid) return jsonResponse(403, null, '当前密码不正确');
@@ -4562,10 +4566,29 @@ async function listAdminUsers(request, env, user) {
 
 async function updateAdminUser(request, env, user) {
   const id = parseInt(request.url.split('/').pop(), 10);
+  if (Number.isNaN(id)) return jsonResponse(400, null, '用户 ID 无效');
   const body = await request.json();
 
-  const target = await env.DB_USERS.prepare('SELECT id FROM users WHERE id = ?').bind(id).first();
+  const target = await env.DB_USERS.prepare('SELECT id, role, status FROM users WHERE id = ?').bind(id).first();
   if (!target) return jsonResponse(404, null, '用户不存在', 404);
+
+  const VALID_ROLES = ['guest', 'admin', 'super_admin'];
+  if (body.role !== undefined && !VALID_ROLES.includes(String(body.role))) {
+    return jsonResponse(400, null, '无效的角色');
+  }
+  const losesSuper =
+    target.role === 'super_admin' &&
+    ((body.role !== undefined && String(body.role) !== 'super_admin') ||
+     (body.status !== undefined && !body.status));
+  if (losesSuper) {
+    const others = await env.DB_USERS.prepare(
+      "SELECT COUNT(*) as c FROM users WHERE role = 'super_admin' AND status = 1 AND id != ?"
+    ).bind(id).first();
+    if (others.c <= 0) return jsonResponse(403, null, '不能降级或禁用最后一个可用的超级管理员');
+  }
+  if (id === user.id && body.role !== undefined && String(body.role) !== target.role) {
+    return jsonResponse(403, null, '不能修改自己的角色，请由其他超级管理员操作');
+  }
 
   const updates = [];
   const params = [];
