@@ -8349,10 +8349,17 @@ export default {
         }
         const contentType = assetResponse.headers.get('content-type') || '';
         if (contentType.includes('text/html')) {
+          // 文章页 HTML 边缘缓存：重复抓取(搜索引擎/平台/恶意刷)命中缓存，不再进 D1
+          const postMatch = url.pathname.match(/^\/post\/([^/]+)\/?$/);
+          const cacheKey = postMatch && method === 'GET' ? new Request(url.origin + url.pathname) : null;
+          let cached = null;
+          if (cacheKey) {
+            cached = await caches.default.match(cacheKey);
+            if (cached) return cached;
+          }
           const html = await assetResponse.text();
           const site = await getSiteConfigObject(env).catch(() => ({ ...defaultSiteConfig }));
           let post = null;
-          const postMatch = url.pathname.match(/^\/post\/([^/]+)\/?$/);
           if (postMatch) {
             const slug = decodeURIComponent(postMatch[1]);
             post = await env.DB_POSTS.prepare(
@@ -8360,11 +8367,23 @@ export default {
             ).bind(slug).first().catch(() => null);
           }
           const modifiedHtml = injectSiteMeta(html, site, request.url, post);
-          return new Response(modifiedHtml, {
+          const resp = new Response(modifiedHtml, {
             status: assetResponse.status,
             statusText: assetResponse.statusText,
             headers: assetResponse.headers,
           });
+          // 仅缓存“已查到发布文章”的 GET 响应，5 分钟 TTL；非文章页/404/回退一律不缓存
+          if (cacheKey && post && resp.status === 200) {
+            const cacheable = new Response(modifiedHtml, {
+              status: 200,
+              headers: {
+                'content-type': 'text/html;charset=UTF-8',
+                'Cache-Control': 'public, s-maxage=300',
+              },
+            });
+            ctx.waitUntil(caches.default.put(cacheKey, cacheable));
+          }
+          return resp;
         }
         return assetResponse;
       }
