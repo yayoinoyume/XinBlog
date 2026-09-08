@@ -8065,10 +8065,10 @@ async function proxyOgImage(request, env, ctx) {
   // —— 前置校验（P2-1）：非法 URL/协议 → 400；非白名单主机 → 403（硬拒：不回退、不计数、不缓存）——
   const verr = assertSafeProxyTarget(target, env);
   if (verr === 'invalid-url' || verr === 'protocol') {
-    return jsonResponse(400, null, '图片 URL 非法（协议仅支持 http/https）');
+    return jsonResponse(400, null, '图片 URL 非法（协议仅支持 http/https）', 400);
   }
   if (verr === 'host') {
-    return jsonResponse(403, null, '图片域名不在代理白名单内');
+    return jsonResponse(403, null, '图片域名不在代理白名单内', 403);
   }
 
   // —— 边缘缓存：读 ——（键 = 完整请求 URL，与 getMedia 一致；命中在限流之前返回、不计数）
