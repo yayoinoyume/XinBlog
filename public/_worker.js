@@ -784,19 +784,25 @@ function escapeHtmlMeta(text) {
     .replace(/'/g, '&#39;');
 }
 
-function injectSiteMeta(html, config, requestUrl) {
-  const title = escapeHtmlMeta(config.siteName || 'XinBlog');
-  const description = escapeHtmlMeta(config.shareDescription || '');
+function resolveAbsoluteImage(image, origin) {
+  if (!image || image.startsWith('data:')) return '';
+  if (!image.startsWith('http')) image = origin + (image.startsWith('/') ? '' : '/') + image;
+  return image;
+}
+
+function injectSiteMeta(html, config, requestUrl, post) {
+  const title = escapeHtmlMeta(post && post.title ? post.title : (config.siteName || 'XinBlog'));
+  const description = escapeHtmlMeta(post && post.excerpt ? post.excerpt : (config.shareDescription || ''));
   const themeColor = escapeHtmlMeta(config.pwaThemeColor || '#ffffff');
   const origin = new URL(requestUrl).origin;
 
-  let image = config.shareImage || config.logo || '/logo.png';
-  if (image.startsWith('data:')) {
-    image = '/logo.png';
+  let image = '';
+  if (post && post.cover_base64) {
+    image = resolveAbsoluteImage(post.cover_base64, origin)
+      || resolveAbsoluteImage(config.shareImage || config.logo || '/logo.png', origin);
   }
-  if (image && !image.startsWith('http')) {
-    image = origin + (image.startsWith('/') ? '' : '/') + image;
-  }
+  if (!image) image = resolveAbsoluteImage(config.shareImage || config.logo || '/logo.png', origin);
+  if (!image) image = resolveAbsoluteImage('/logo.png', origin);
   image = escapeHtmlMeta(image);
 
   html = html.replace(/<title>.*?<\/title>/i, `<title>${title}</title>`);
@@ -1438,6 +1444,20 @@ async function listAdminTags(request, env, user) {
   return jsonResponse(0, { list: tags.results || [], total: countRow.c, page, limit });
 }
 
+async function purgePostCardCache(request, slug) {
+  if (!slug) return;
+  try {
+    const origin = new URL(request.url).origin;
+    const variants = [
+      new Request(origin + '/post/' + slug),
+      new Request(origin + '/post/' + slug + '/'),
+    ];
+    for (const k of variants) {
+      try { await caches.default.delete(k); } catch {}
+    }
+  } catch {}
+}
+
 async function createPost(request, env, user) {
   const body = await request.json();
   const title = String(body.title || '').trim();
@@ -1465,6 +1485,11 @@ async function createPost(request, env, user) {
       await env.DB_POSTS.prepare('INSERT OR IGNORE INTO post_tags (post_id, tag_id) VALUES (?, ?)')
         .bind(postId, tagId)
         .run();
+    }
+
+    // 发布时清掉该文章的旧卡片缓存，避免 TTL 内残留旧元数据(P2-4)
+    if (status === 'published') {
+      await purgePostCardCache(request, slug);
     }
 
     return jsonResponse(0, { id: postId, slug }, '创建成功');
@@ -1510,6 +1535,9 @@ async function updatePost(request, env, user) {
   }
   if (updates.length === 0) return jsonResponse(400, null, '无更新内容');
 
+  // 记录更新前的 slug，便于更新后精确清除新旧卡片缓存(P2-4)
+  const prevPost = await env.DB_POSTS.prepare('SELECT slug FROM posts WHERE id = ?').bind(id).first().catch(() => null);
+
   updates.push('updated_at = ?');
   params.push(now());
   params.push(id);
@@ -1526,6 +1554,10 @@ async function updatePost(request, env, user) {
       }
     }
 
+    // 清除该文章新旧 slug 的卡片缓存，使标题/封面/上下架即时生效(P2-4)
+    if (prevPost && prevPost.slug) await purgePostCardCache(request, prevPost.slug);
+    if (body.slug !== undefined) await purgePostCardCache(request, String(body.slug).trim());
+
     return jsonResponse(0, null, '更新成功');
   } catch (e) {
     if (e.message && e.message.includes('UNIQUE')) {
@@ -1537,11 +1569,14 @@ async function updatePost(request, env, user) {
 
 async function deletePost(request, env, user) {
   const id = parseInt(request.url.split('/').pop(), 10);
+  const row = await env.DB_POSTS.prepare('SELECT slug FROM posts WHERE id = ?').bind(id).first().catch(() => null);
   await env.DB_POSTS.prepare('DELETE FROM post_tags WHERE post_id = ?').bind(id).run();
   
   await deleteCommentsByPost(env, id);
   await env.DB_POSTS.prepare('DELETE FROM likes WHERE post_id = ?').bind(id).run();
   await env.DB_POSTS.prepare('DELETE FROM posts WHERE id = ?').bind(id).run();
+  // 删除后清掉该文章卡片缓存，避免已下架元数据残留(P2-4)
+  if (row && row.slug) await purgePostCardCache(request, row.slug);
   return jsonResponse(0, null, '删除成功');
 }
 
@@ -8343,14 +8378,48 @@ export default {
         }
         const contentType = assetResponse.headers.get('content-type') || '';
         if (contentType.includes('text/html')) {
+          // 文章页 HTML 边缘缓存：重复抓取(搜索引擎/平台/恶意刷)命中缓存，不再进 D1
+          const postMatch = url.pathname.match(/^\/post\/([^/]+)\/?$/);
+          const cacheKey = postMatch && method === 'GET' ? new Request(url.origin + url.pathname) : null;
+          let cached = null;
+          if (cacheKey) {
+            try {
+              cached = await caches.default.match(cacheKey);
+            } catch {
+              cached = null; // Cache API 异常时降级为正常渲染，避免整页打成 500(P2-3)
+            }
+            if (cached) return cached;
+          }
           const html = await assetResponse.text();
           const site = await getSiteConfigObject(env).catch(() => ({ ...defaultSiteConfig }));
-          const modifiedHtml = injectSiteMeta(html, site, request.url);
-          return new Response(modifiedHtml, {
+          let post = null;
+          if (postMatch) {
+            const slug = decodeURIComponent(postMatch[1]);
+            post = await env.DB_POSTS.prepare(
+              `SELECT title, excerpt, cover_base64 FROM posts WHERE slug = ? AND status = 'published'`
+            ).bind(slug).first().catch(() => null);
+          }
+          // og:url 用规范化路径(去 query)，与缓存键一致，避免固化首个请求的 query(P2-1)
+          const canonicalUrl = url.origin + url.pathname;
+          const modifiedHtml = injectSiteMeta(html, site, canonicalUrl, post);
+          const resp = new Response(modifiedHtml, {
             status: assetResponse.status,
             statusText: assetResponse.statusText,
             headers: assetResponse.headers,
           });
+          // 仅缓存“已查到发布文章”的 GET 响应，5 分钟 TTL；非文章页/404/回退一律不缓存
+          if (cacheKey && post && resp.status === 200) {
+            const cacheable = new Response(modifiedHtml, {
+              status: 200,
+              headers: {
+                'content-type': 'text/html;charset=UTF-8',
+                'Cache-Control': 'public, s-maxage=300',
+              },
+            });
+            // 写缓存失败不产生 unhandled rejection(P2-2)
+            ctx.waitUntil(caches.default.put(cacheKey, cacheable).catch(() => {}));
+          }
+          return resp;
         }
         return assetResponse;
       }
