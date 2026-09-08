@@ -791,6 +791,7 @@ function resolveAbsoluteImage(image, origin) {
 }
 
 function injectSiteMeta(html, config, requestUrl, post, env) {
+  const siteName = escapeHtmlMeta(config.siteName || 'XinBlog');
   const title = escapeHtmlMeta(post && post.title ? post.title : (config.siteName || 'XinBlog'));
   const descriptionRaw = post && post.excerpt ? post.excerpt : (config.shareDescription || '');
   const description = escapeHtmlMeta(truncateMeta(descriptionRaw, 200)); // §5.3，先截断后转义
@@ -818,13 +819,17 @@ function injectSiteMeta(html, config, requestUrl, post, env) {
 
   const metaTags = [
     `<link rel="manifest" href="/manifest.json?v=2" />`,
+    `<link rel="canonical" href="${escapeHtmlMeta(requestUrl)}" />`,
     `<meta name="theme-color" content="${themeColor}" />`,
+    `<meta property="og:site_name" content="${siteName}" />`,
     `<meta property="og:title" content="${title}" />`,
     `<meta property="og:description" content="${description}" />`,
     `<meta property="og:type" content="website" />`,
     `<meta property="og:url" content="${escapeHtmlMeta(requestUrl)}" />`,
     `<meta property="og:image" content="${image}" />`,
     `<meta name="twitter:card" content="summary_large_image" />`,
+    `<meta name="twitter:title" content="${title}" />`,
+    `<meta name="twitter:description" content="${description}" />`,
     `<meta name="twitter:image" content="${image}" />`,
   ].join('\n');
 
