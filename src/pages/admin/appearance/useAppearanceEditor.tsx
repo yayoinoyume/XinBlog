@@ -227,7 +227,7 @@ export function useAppearanceEditor() {
   useEffect(() => {
     let mounted = true;
     setPreviewLoading(true);
-    fetchPosts().then((data) => {
+    fetchPosts({ fields: 'lite' }).then((data) => {
       if (!mounted) return;
       setPreviewPosts(data.slice(0, 6));
       setPreviewLoading(false);

@@ -87,7 +87,7 @@ export function PostDetailThemePanel() {
   useEffect(() => {
     let mounted = true;
     setPreviewLoading(true);
-    fetchPosts().then((data) => {
+    fetchPosts({ fields: 'lite' }).then((data) => {
       if (!mounted) return;
       setPreviewPosts(data.slice(0, 4));
       setPreviewLoading(false);

@@ -58,7 +58,7 @@ export function AdminLayoutSettings() {
   const [posts, setPosts] = useState<Post[]>([]);
 
   useEffect(() => {
-    fetchPosts().then((data) => {
+    fetchPosts({ fields: 'lite' }).then((data) => {
       if (data.length) setPosts(data);
     });
   }, []);
