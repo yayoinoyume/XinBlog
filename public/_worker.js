@@ -879,6 +879,65 @@ async function getManifest(env, requestUrl) {
   }
 }
 
+function xmlEscape(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+// 站点地图：动态生成，随文章发布/删除自动增删（无需手动维护）。
+async function serveSitemap(env, url) {
+  const origin = url.origin;
+  const rows = await env.DB_POSTS.prepare(
+    "SELECT slug, updated_at, created_at FROM posts WHERE status = 'published' ORDER BY created_at DESC"
+  ).all();
+
+  const urls = [{ loc: origin + '/' }, { loc: origin + '/about' }];
+  for (const r of rows.results || []) {
+    // encodeURIComponent 后再还原保留的斜杠，避免自定义 slug 含非法字符时产出坏 URL
+    const slug = encodeURIComponent(r.slug).replace(/%2F/g, '/');
+    const lastmod = String(r.updated_at || r.created_at || '').slice(0, 10); // YYYY-MM-DD
+    urls.push({ loc: origin + '/post/' + slug, lastmod });
+  }
+
+  const items = urls
+    .map((u) => {
+      const mod = u.lastmod ? `\n    <lastmod>${xmlEscape(u.lastmod)}</lastmod>` : '';
+      return `  <url>\n    <loc>${xmlEscape(u.loc)}</loc>${mod}\n  </url>`;
+    })
+    .join('\n');
+
+  const xml =
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
+    items +
+    '\n</urlset>\n';
+
+  return new Response(xml, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/xml; charset=utf-8',
+      'Cache-Control': 'public, max-age=600, stale-while-revalidate=3600',
+    },
+  });
+}
+
+// robots.txt：引用站点地图；域名取自请求 origin，与 sitemap/canonical 保持一致。
+function serveRobots(url) {
+  const origin = url.origin;
+  const body = ['User-agent: *', 'Allow: /', '', 'Sitemap: ' + origin + '/sitemap.xml', ''].join('\n');
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'public, max-age=3600',
+    },
+  });
+}
+
 async function getSiteConfig(env) {
   
   try {
@@ -8346,6 +8405,10 @@ export default {
       if (method === 'POST' && path === '/api/v1/chat/media/upload') {
         return await requireAuth(request, env, chatUploadMedia);
       }
+
+      
+      if (method === 'GET' && path === '/sitemap.xml') return await serveSitemap(env, url);
+      if (method === 'GET' && path === '/robots.txt') return serveRobots(url);
 
       
       if (method === 'GET' && path === '/v1/models') return await openaiModels(request, env);
