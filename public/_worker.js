@@ -790,9 +790,10 @@ function resolveAbsoluteImage(image, origin) {
   return image;
 }
 
-function injectSiteMeta(html, config, requestUrl, post) {
+function injectSiteMeta(html, config, requestUrl, post, env) {
   const title = escapeHtmlMeta(post && post.title ? post.title : (config.siteName || 'XinBlog'));
-  const description = escapeHtmlMeta(post && post.excerpt ? post.excerpt : (config.shareDescription || ''));
+  const descriptionRaw = post && post.excerpt ? post.excerpt : (config.shareDescription || '');
+  const description = escapeHtmlMeta(truncateMeta(descriptionRaw, 200)); // §5.3，先截断后转义
   const themeColor = escapeHtmlMeta(config.pwaThemeColor || '#ffffff');
   const origin = new URL(requestUrl).origin;
 
@@ -803,7 +804,7 @@ function injectSiteMeta(html, config, requestUrl, post) {
   }
   if (!image) image = resolveAbsoluteImage(config.shareImage || config.logo || '/logo.png', origin);
   if (!image) image = resolveAbsoluteImage('/logo.png', origin);
-  image = escapeHtmlMeta(image);
+  image = escapeHtmlMeta(rewriteOgImage(image, origin, env));
 
   html = html.replace(/<title>.*?<\/title>/i, `<title>${title}</title>`);
   html = html.replace(
@@ -1807,6 +1808,14 @@ async function clearAdminActiveTheme(request, env, user) {
 }
 
 const MAX_MEDIA_CHUNK_SIZE = 80 * 1024; 
+
+// —— 受控图片代理白名单（常量，与 og:image 改写共用）——
+const IMG_PROXY_EXACT_HOSTS = new Set(['oss.yayoi.love']);              // 精确主机（唯一白名单）
+const IMG_PROXY_HOST_SUFFIXES = [];                                     // 泛后缀白名单已清空：仅允许精确主机 oss.yayoi.love；需额外域经 env.IMG_PROXY_EXTRA_HOSTS 加入
+const IMG_PROXY_MAX_BYTES = 5 * 1024 * 1024;                            // 单图上限 5MB
+const IMG_PROXY_MAX_REDIRECTS = 3;                                      // 重定向最多 3 跳
+const IMG_PROXY_RATE_LIMIT = 30;                                        // 回源限流：每 IP 每窗口最多回源次数
+const IMG_PROXY_RATE_WINDOW_SEC = 60;                                   // 回源限流窗口（秒）
 
 const ALLOWED_IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/bmp']);
 
@@ -7949,6 +7958,182 @@ async function resolveUrl(request) {
 }
 
 
+// —— 受控图片代理：白名单 / SSRF / 大小 / 重定向 / 回源限流 / og:image 改写 ——
+function isAllowedProxyHost(host, env) {
+  host = String(host || '').toLowerCase().replace(/\.$/, '');
+  if (!host) return false;
+  if (IMG_PROXY_EXACT_HOSTS.has(host)) return true;
+  if (IMG_PROXY_HOST_SUFFIXES.some((s) => host === s || host.endsWith('.' + s))) return true;
+  // 可选 env 扩展（逗号分隔）
+  const extra = (env && env.IMG_PROXY_EXTRA_HOSTS) || '';
+  const extraHosts = extra.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);
+  if (extraHosts.includes(host)) return true;
+  return false;
+}
+
+function isPrivateIp(ip) {
+  if (!ip) return true;
+  if (ip.includes(':')) { // IPv6
+    return /^::$|^::1$|^fc|^fd|^fe[89ab]/i.test(ip);
+  }
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4) return true;
+  const [a, b] = parts;
+  if (a === 0 || a === 127 || a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 169 && b === 254) return true; // 169.254.169.254 metadata
+  return false;
+}
+
+// 可选：用 DoH 解析（cloudflare-dns.com 或 1.1.1.1）。仅当 IMG_PROXY_ENABLE_IP_CHECK 开启时调用。
+async function resolveHostToIPs(host) {
+  try {
+    const resp = await fetch(
+      'https://cloudflare-dns.com/dns-query?name=' + encodeURIComponent(host) + '&type=A',
+      { headers: { accept: 'application/dns-json' } }
+    );
+    const data = await resp.json();
+    return (data.Answer || []).filter((r) => r.type === 1).map((r) => r.data);
+  } catch { return []; }
+}
+
+function assertSafeProxyTarget(targetStr, env) {
+  let u;
+  try { u = new URL(targetStr); } catch { return 'invalid-url'; }
+  // 1) 协议：仅 http/https，禁止 file/ftp/data/javascript 等
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return 'protocol';
+  // 2) 主机白名单
+  if (!isAllowedProxyHost(u.hostname, env)) return 'host';
+  return null; // ok
+}
+
+async function fetchImageThroughProxy(targetStr, env, ctx) {
+  let current = targetStr;
+  for (let hop = 0; hop <= IMG_PROXY_MAX_REDIRECTS; hop++) {
+    const err = assertSafeProxyTarget(current, env);
+    if (err) return { status: err === 'protocol' ? 400 : 403, body: null }; // 非法/非白名单
+    if (env && env.IMG_PROXY_ENABLE_IP_CHECK) {
+      const ips = await resolveHostToIPs(new URL(current).hostname);
+      if (ips.length && ips.every(isPrivateIp)) return { status: 403, body: null }; // 全私网，拒
+    }
+    const resp = await fetch(current, { method: 'GET', redirect: 'manual', headers: {
+      'User-Agent': 'Mozilla/5.0 (compatible; XinBlog-ImgProxy/1.0)',
+      Accept: 'image/avif,image/webp,image/*,*/*;q=0.8',
+    }});
+    if (resp.status >= 300 && resp.status < 400 && resp.headers.get('location')) {
+      current = new URL(resp.headers.get('location'), current).href; // 相对/绝对都兼容
+      continue; // 下一跳重新校验
+    }
+    return { status: resp.status, resp };
+  }
+  return { status: 508, body: null }; // 重定向过多
+}
+
+async function enforceSizeLimit(resp, limit) {
+  const len = Number(resp.headers.get('content-length') || 0);
+  if (len > limit) return null;                       // 头即超限 → 拒
+  if (len > 0) return resp;                           // 已知长度且未超 → 直接透传
+  // 无长度头：手动读取计数截断（读入内存累计，超限中止）
+  const reader = resp.body.getReader();
+  const parts = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > limit) {
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      parts.push(value);
+    }
+  } catch {
+    await reader.cancel().catch(() => {});
+    return null;
+  }
+  return new Response(new Blob(parts), { status: resp.status, headers: resp.headers });
+}
+
+async function proxyOgImage(request, env, ctx) {
+  const url = new URL(request.url);
+  const target = url.searchParams.get('u');
+  if (!target) return jsonResponse(400, null, '缺少 u 参数');
+
+  // —— 前置校验（P2-1）：非法 URL/协议 → 400；非白名单主机 → 403（硬拒：不回退、不计数、不缓存）——
+  const verr = assertSafeProxyTarget(target, env);
+  if (verr === 'invalid-url' || verr === 'protocol') {
+    return jsonResponse(400, null, '图片 URL 非法（协议仅支持 http/https）');
+  }
+  if (verr === 'host') {
+    return jsonResponse(403, null, '图片域名不在代理白名单内');
+  }
+
+  // —— 边缘缓存：读 ——（键 = 完整请求 URL，与 getMedia 一致；命中在限流之前返回、不计数）
+  let cacheKey = null;
+  try { cacheKey = new Request(request.url); } catch {}
+  if (cacheKey) {
+    try {
+      const hit = await caches.default.match(cacheKey);
+      if (hit) return hit;
+    } catch {} // Cache API 异常降级（同 P2-3）
+  }
+
+  // —— 回源限流（P2-2）：仅对“前置校验通过且缓存未命中、确将回源”的请求计数 ——（§4.2 说明）
+  if (!(await checkRateLimit(env, 'ogip:' + getClientIp(request), IMG_PROXY_RATE_LIMIT, IMG_PROXY_RATE_WINDOW_SEC))) {
+    return jsonResponse(429, null, '图片代理请求过于频繁，请稍后再试', 429);
+  }
+
+  const result = await fetchImageThroughProxy(target, env, ctx); // §4.4
+  if (result.status !== 200 || !result.resp) {
+    // —— 失败回退：302 到原始图 URL，绝不缺图 ——
+    return new Response(null, { status: 302, headers: { Location: target } });
+  }
+  const resp = result.resp;
+  const ctype = (resp.headers.get('content-type') || '').toLowerCase();
+
+  // 仅透传图片；非图 / 非 200 一律不缓存
+  if (!ctype.startsWith('image/')) return new Response(null, { status: 302, headers: { Location: target } });
+
+  // —— 大小上限 ——
+  const bounded = await enforceSizeLimit(resp, IMG_PROXY_MAX_BYTES);
+  if (!bounded) return new Response(null, { status: 302, headers: { Location: target } });
+
+  const headers = new Headers(bounded.headers);
+  headers.set('Content-Type', ctype);
+  headers.set('Cache-Control', 'public, max-age=86400, s-maxage=604800'); // 浏览器1天/边缘7天
+  headers.set('Access-Control-Allow-Origin', '*');
+  headers.set('X-Content-Type-Options', 'nosniff');
+
+  const out = new Response(bounded.body, { status: 200, headers });
+
+  // —— 边缘缓存：写 ——（仅成功 + image，put 包 catch，同 P2-2）
+  if (cacheKey) {
+    ctx.waitUntil(caches.default.put(cacheKey, out.clone()).catch(() => {}));
+  }
+  return out;
+}
+
+function rewriteOgImage(image, origin, env) {
+  if (!image || !/^https?:/i.test(image)) return image;   // data: 已在上游降级；相对路径走本站，不改
+  let u;
+  try { u = new URL(image); } catch { return image; }
+  if (u.origin === origin) return image;                  // 本站同源图（含 /api/v1/media/:id）→ 不改
+  if (isAllowedProxyHost(u.hostname, env)) {              // 白名单外链（OSS 等）→ 改写为代理端点
+    return new URL('/api/v1/og-img?u=' + encodeURIComponent(image), origin).href;
+  }
+  return image;                                           // 其它外链域（不在白名单）→ 保持原样
+}
+
+function truncateMeta(str, max = 200) {
+  if (!str) return '';
+  const s = String(str);
+  if ([...s].length <= max) return s;
+  return [...s].slice(0, max - 1).join('') + '…';   // 保留 max-1 码点 + 省略号 = max 码点
+}
+
 async function proxyImage(request) {
   const url = new URL(request.url);
   const target = url.searchParams.get('url');
@@ -8175,6 +8360,7 @@ export default {
 
       
       if (method === 'GET' && path === '/api/v1/proxy-image') return await proxyImage(request);
+      if (method === 'GET' && path === '/api/v1/og-img') return await proxyOgImage(request, env, ctx);
 
       
       if (method === 'GET' && path.match(/^\/api\/v1\/posts\/[^/]+\/comments$/)) return await listComments(env, url, path);
@@ -8401,7 +8587,7 @@ export default {
           }
           // og:url 用规范化路径(去 query)，与缓存键一致，避免固化首个请求的 query(P2-1)
           const canonicalUrl = url.origin + url.pathname;
-          const modifiedHtml = injectSiteMeta(html, site, canonicalUrl, post);
+          const modifiedHtml = injectSiteMeta(html, site, canonicalUrl, post, env);
           const resp = new Response(modifiedHtml, {
             status: assetResponse.status,
             statusText: assetResponse.statusText,
