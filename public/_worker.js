@@ -784,19 +784,25 @@ function escapeHtmlMeta(text) {
     .replace(/'/g, '&#39;');
 }
 
-function injectSiteMeta(html, config, requestUrl) {
-  const title = escapeHtmlMeta(config.siteName || 'XinBlog');
-  const description = escapeHtmlMeta(config.shareDescription || '');
+function resolveAbsoluteImage(image, origin) {
+  if (!image || image.startsWith('data:')) return '';
+  if (!image.startsWith('http')) image = origin + (image.startsWith('/') ? '' : '/') + image;
+  return image;
+}
+
+function injectSiteMeta(html, config, requestUrl, post) {
+  const title = escapeHtmlMeta(post && post.title ? post.title : (config.siteName || 'XinBlog'));
+  const description = escapeHtmlMeta(post && post.excerpt ? post.excerpt : (config.shareDescription || ''));
   const themeColor = escapeHtmlMeta(config.pwaThemeColor || '#ffffff');
   const origin = new URL(requestUrl).origin;
 
-  let image = config.shareImage || config.logo || '/logo.png';
-  if (image.startsWith('data:')) {
-    image = '/logo.png';
+  let image = '';
+  if (post && post.cover_base64) {
+    image = resolveAbsoluteImage(post.cover_base64, origin)
+      || resolveAbsoluteImage(config.shareImage || config.logo || '/logo.png', origin);
   }
-  if (image && !image.startsWith('http')) {
-    image = origin + (image.startsWith('/') ? '' : '/') + image;
-  }
+  if (!image) image = resolveAbsoluteImage(config.shareImage || config.logo || '/logo.png', origin);
+  if (!image) image = resolveAbsoluteImage('/logo.png', origin);
   image = escapeHtmlMeta(image);
 
   html = html.replace(/<title>.*?<\/title>/i, `<title>${title}</title>`);
@@ -8345,7 +8351,15 @@ export default {
         if (contentType.includes('text/html')) {
           const html = await assetResponse.text();
           const site = await getSiteConfigObject(env).catch(() => ({ ...defaultSiteConfig }));
-          const modifiedHtml = injectSiteMeta(html, site, request.url);
+          let post = null;
+          const postMatch = url.pathname.match(/^\/post\/([^/]+)\/?$/);
+          if (postMatch) {
+            const slug = decodeURIComponent(postMatch[1]);
+            post = await env.DB_POSTS.prepare(
+              `SELECT title, excerpt, cover_base64 FROM posts WHERE slug = ? AND status = 'published'`
+            ).bind(slug).first().catch(() => null);
+          }
+          const modifiedHtml = injectSiteMeta(html, site, request.url, post);
           return new Response(modifiedHtml, {
             status: assetResponse.status,
             statusText: assetResponse.statusText,
