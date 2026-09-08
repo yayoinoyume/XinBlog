@@ -31,7 +31,7 @@ export function TagPage() {
 
     const [tagsData, postsData] = await Promise.all([
       fetchTags(),
-      fetchPostsPage({ page: targetPage, limit: pageSize, tag: activeSlug }),
+      fetchPostsPage({ page: targetPage, limit: pageSize, tag: activeSlug, fields: 'lite' }),
     ]);
 
     if (key !== requestKeyRef.current) return;

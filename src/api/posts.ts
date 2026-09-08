@@ -108,11 +108,11 @@ export async function fetchPosts(options?: FetchPostsOptions | string): Promise<
   return data.list;
 }
 
-export async function fetchAllPosts(tag?: string): Promise<Post[]> {
+export async function fetchAllPosts(tag?: string, fields?: 'lite'): Promise<Post[]> {
   const all: Post[] = [];
   let page = 1;
   while (true) {
-    const data = await fetchPostsPage({ page, limit: MAX_PAGE_LIMIT, tag });
+    const data = await fetchPostsPage({ page, limit: MAX_PAGE_LIMIT, tag, fields });
     all.push(...data.list);
     if (data.list.length < data.limit || all.length >= data.total) break;
     page += 1;
