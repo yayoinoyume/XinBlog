@@ -1,6 +1,7 @@
-import { Container, Box, Typography, Paper, alpha, Fade } from '@mui/material';
+import { Container, Box, Typography, Paper, alpha, Fade, IconButton, Tooltip, Stack } from '@mui/material';
 import { LazyImage } from '@/components/Common/LazyImage';
 import { useSiteStore } from '@/stores/siteStore';
+import { getSocialPlatformIcon, getSocialDomain, normalizeSocials } from '@/utils/socialLinks';
 
 export function About() {
   const { config } = useSiteStore();
@@ -60,6 +61,60 @@ export function About() {
             </Typography>
 
           )}
+
+          {(() => {
+            const socials = normalizeSocials(config.about?.socials);
+            return socials.length > 0 ? (
+            <Stack
+              direction="row"
+              justifyContent="center"
+              spacing={{ xs: 1, sm: 1.5 }}
+              sx={{ mt: 4, flexWrap: 'wrap', gap: { xs: 1, sm: 1.5 } }}
+            >
+              {socials.map((social) => {
+                const Icon = getSocialPlatformIcon(social.platform);
+                return (
+                  <Tooltip key={social.url} title={social.label} placement="top">
+                    <IconButton
+                      component="a"
+                      href={social.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={social.label || getSocialDomain(social.url)}
+                      sx={{
+                        width: 44,
+                        height: 44,
+                        border: (theme) =>
+                          `1px solid ${alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.2 : 0.35)}`,
+                        color: 'primary.main',
+                        backgroundColor: (theme) =>
+                          alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.08 : 0.18),
+                        transition: 'all 0.2s',
+                        '&:hover': {
+                          backgroundColor: 'primary.main',
+                          color: (theme) =>
+                            theme.palette.getContrastText(theme.palette.primary.main),
+                          transform: 'translateY(-2px)',
+                        },
+                      }}
+                    >
+                      {social.icon ? (
+                        <Box
+                          component="img"
+                          src={social.icon}
+                          alt=""
+                          sx={{ width: 24, height: 24, objectFit: 'contain' }}
+                        />
+                      ) : (
+                        <Icon size={22} />
+                      )}
+                    </IconButton>
+                  </Tooltip>
+                );
+              })}
+            </Stack>
+            ) : null;
+          })()}
 
           {config.about?.tags && config.about.tags.length > 0 && (
             <Box sx={{ mt: 4, display: 'flex', justifyContent: 'center', gap: { xs: 1, sm: 2 }, flexWrap: 'wrap' }}>
