@@ -76,6 +76,7 @@ export interface FetchPostsOptions {
   page?: number;
   limit?: number;
   tag?: string;
+  fields?: 'lite';
 }
 
 const MAX_PAGE_LIMIT = 50;
@@ -85,6 +86,7 @@ function buildPostsQuery(options?: FetchPostsOptions): { params: URLSearchParams
   const limit = Math.min(MAX_PAGE_LIMIT, Math.max(1, options?.limit ?? 10));
   const params = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (options?.tag) params.set('tag', options.tag);
+  if (options?.fields) params.set('fields', options.fields);
   return { params, page, limit };
 }
 

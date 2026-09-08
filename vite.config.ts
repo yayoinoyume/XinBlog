@@ -9,7 +9,7 @@ function cleanOldAssets(): Plugin {
     name: 'clean-old-assets',
     async writeBundle(_options, bundle) {
       const fs = await import('fs/promises')
-      const outDir = path.resolve(__dirname, OUT_DIR)
+      const outDir = path.resolve(import.meta.dirname, OUT_DIR)
       const assetsDir = path.join(outDir, 'assets')
       const emitted = new Set<string>(Object.keys(bundle))
       const files = await fs.readdir(assetsDir).catch(() => [] as string[])
@@ -28,7 +28,7 @@ export default defineConfig({
   plugins: [react(), cleanOldAssets()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(import.meta.dirname, './src'),
     },
   },
   server: {

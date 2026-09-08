@@ -532,6 +532,21 @@ async function getSetting(env, key) {
   }
 }
 
+async function getSettingsBatch(env, keys) {
+  const db = getConfigDb(env);
+  const rows = await db.prepare(
+    `SELECT key, value FROM settings WHERE key IN (${keys.map(() => '?').join(',')})`
+  ).bind(...keys).all();
+  const byKey = new Map((rows.results || []).map((r) => [r.key, r.value]));
+  const out = {};
+  for (const k of keys) {
+    const raw = byKey.get(k);
+    if (raw === undefined || raw === null || raw === '') { out[k] = null; continue; }
+    try { out[k] = JSON.parse(raw); } catch { out[k] = null; }
+  }
+  return out;
+}
+
 async function setSetting(env, key, value) {
   const db = getConfigDb(env);
   await db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
@@ -736,14 +751,13 @@ const defaultFriendsConfig = {
 };
 
 async function getSiteConfigObject(env) {
-  const site = (await getSetting(env, 'site')) || {};
-  const hero = (await getSetting(env, 'hero')) || {};
-  const about = (await getSetting(env, 'about')) || {};
-  const friends = (await getSetting(env, 'friends')) || {};
-  const ai = (await getSetting(env, 'ai')) || {};
-  
-  
-  const activeThemeId = (await getSetting(env, 'active_theme')) || '';
+  const s = await getSettingsBatch(env, ['site', 'hero', 'about', 'friends', 'ai', 'active_theme']);
+  const site = s.site || {};
+  const hero = s.hero || {};
+  const about = s.about || {};
+  const friends = s.friends || {};
+  const ai = s.ai || {};
+  const activeThemeId = s.active_theme || '';
   const cardTheme = activeThemeId
     ? { ...defaultSiteConfig.cardTheme, ...(site.cardTheme || {}) }
     : defaultSiteConfig.cardTheme;
@@ -871,6 +885,7 @@ async function listPosts(env, url) {
   const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
   const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '10', 10)));
   const tag = url.searchParams.get('tag');
+  const lite = url.searchParams.get('fields') === 'lite';
   const offset = (page - 1) * limit;
 
   let posts;
@@ -880,7 +895,7 @@ async function listPosts(env, url) {
     const tagRow = await env.DB_POSTS.prepare('SELECT id FROM tags WHERE slug = ?').bind(tag).first();
     if (!tagRow) return jsonResponse(0, { list: [], total: 0, page, limit });
     posts = await env.DB_POSTS.prepare(
-      `SELECT p.id, p.title, p.slug, p.excerpt, p.content, p.cover_base64, p.author_id, p.status, p.views, p.reading_time, p.created_at, p.updated_at
+      `SELECT p.id, p.title, p.slug, p.excerpt, ${lite ? '' : 'p.content, '}p.cover_base64, p.author_id, p.status, p.views, p.reading_time, p.created_at, p.updated_at
        FROM posts p
        JOIN post_tags pt ON p.id = pt.post_id
        WHERE pt.tag_id = ? AND p.status = 'published'
@@ -897,7 +912,7 @@ async function listPosts(env, url) {
     total = countRow.c;
   } else {
     posts = await env.DB_POSTS.prepare(
-      `SELECT id, title, slug, excerpt, content, cover_base64, author_id, status, views, reading_time, created_at, updated_at
+      `SELECT id, title, slug, excerpt, ${lite ? '' : 'content, '}cover_base64, author_id, status, views, reading_time, created_at, updated_at
        FROM posts WHERE status = 'published' ORDER BY created_at DESC LIMIT ? OFFSET ?`
     )
       .bind(limit, offset)
@@ -1010,7 +1025,9 @@ async function checkRateLimit(env, key, limit, windowSec) {
   }
   
   if (Math.random() < 0.02) {
-    await db.prepare('DELETE FROM rate_limits WHERE window_start < ?').bind(bucket - 3).run();
+    // 不同 windowSec 的桶量纲不同，限定同量纲区间清理，避免短窗口调用抹掉长窗口计数
+    // ponytail: 假设各调用点 windowSec 相差 >=6 倍（现 60/600/3600/86400 满足）；引入相近窗口时改为 key 存 window_sec 列
+    await db.prepare('DELETE FROM rate_limits WHERE window_start < ? AND window_start > ?').bind(bucket - 3, bucket - 100).run();
   }
   return row.count <= limit;
 }
@@ -1756,16 +1773,19 @@ async function clearAdminActiveTheme(request, env, user) {
 
 const MAX_MEDIA_CHUNK_SIZE = 80 * 1024; 
 
+const ALLOWED_IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/bmp']);
+
 async function uploadMedia(request, env, user) {
   const body = await request.json();
   const name = String(body.name || 'image.jpg');
   const mimeType = String(body.mimeType || 'image/jpeg');
-  const base64 = String(body.base64 || '');
+  const rawBase64 = String(body.base64 || '');
+  const base64 = rawBase64.includes(',') ? rawBase64.split(',')[1] : rawBase64;
   const width = body.width ? parseInt(body.width, 10) : null;
   const height = body.height ? parseInt(body.height, 10) : null;
 
   if (!base64) return jsonResponse(400, null, '图片数据为空');
-  if (!mimeType.startsWith('image/')) return jsonResponse(400, null, '仅支持图片');
+  if (!ALLOWED_IMAGE_MIME.has(mimeType)) return jsonResponse(400, null, '仅支持 JPG/PNG/GIF/WebP/AVIF/BMP 图片（不支持 SVG）');
   if (base64.length > MAX_MEDIA_CHUNK_SIZE) {
     return jsonResponse(413, null, '图片超过单接口上限，请使用分片上传');
   }
@@ -1792,7 +1812,7 @@ async function initMediaUpload(request, env, user) {
 
   if (!chunkCount || chunkCount <= 0) return jsonResponse(400, null, '分片数量无效');
   if (!size) return jsonResponse(400, null, '文件大小无效');
-  if (!mimeType.startsWith('image/')) return jsonResponse(400, null, '仅支持图片');
+  if (!ALLOWED_IMAGE_MIME.has(mimeType)) return jsonResponse(400, null, '仅支持 JPG/PNG/GIF/WebP/AVIF/BMP 图片（不支持 SVG）');
 
   const result = await env.DB_MEDIA.prepare(
     'INSERT INTO media (name, mime_type, size, base64_data, width, height, chunk_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -1811,7 +1831,8 @@ async function uploadMediaChunk(request, env, user) {
 
   const body = await request.json();
   const chunkIndex = parseInt(body.chunkIndex ?? body.chunk_index ?? '0', 10);
-  const chunkData = String(body.chunkData ?? body.chunk_data ?? '');
+  const rawChunk = String(body.chunkData ?? body.chunk_data ?? '');
+  const chunkData = rawChunk.includes(',') ? rawChunk.split(',')[1] : rawChunk;
 
   if (!chunkData) return jsonResponse(400, null, '分片数据为空');
   if (chunkData.length > MAX_MEDIA_CHUNK_SIZE) return jsonResponse(413, null, '分片过大');
@@ -1872,6 +1893,7 @@ async function getMedia(env, id, request, ctx) {
 
   const mimeType = String(row.mime_type || 'image/jpeg');
   let base64 = String(row.base64_data || '');
+  if (base64.startsWith('data:') && base64.includes(',')) base64 = base64.slice(base64.indexOf(',') + 1);
 
   if (row.chunk_count > 0) {
     const chunkRows = await env.DB_MEDIA.prepare(
@@ -1892,17 +1914,15 @@ async function getMedia(env, id, request, ctx) {
 
   let binary;
   try {
-    binary = Uint8Array.from(
-      atob(base64)
-        .split('')
-        .map((c) => c.charCodeAt(0))
-    );
+    binary = base64ToBytes(base64);
   } catch (e) {
     return new Response('Media decode failed', { status: 500 });
   }
   response = new Response(binary, {
     headers: {
-      'Content-Type': mimeType,
+      'Content-Type': ALLOWED_IMAGE_MIME.has(mimeType) ? mimeType : 'application/octet-stream',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Disposition': ALLOWED_IMAGE_MIME.has(mimeType) ? 'inline' : 'attachment',
       'Cache-Control': 'public, max-age=86400',
       'Content-Length': String(binary.length),
     },
@@ -2095,7 +2115,7 @@ async function updateAdminMedia(request, env, user) {
   const name = body.name ? String(body.name) : row.name;
 
   if (!rawBase64) return jsonResponse(400, null, '图片数据为空');
-  if (!mimeType.startsWith('image/')) return jsonResponse(400, null, '仅支持图片');
+  if (!ALLOWED_IMAGE_MIME.has(mimeType)) return jsonResponse(400, null, '仅支持 JPG/PNG/GIF/WebP/AVIF/BMP 图片（不支持 SVG）');
 
   
   const base64 = rawBase64.includes(',') ? rawBase64.split(',')[1] : rawBase64;
@@ -3066,7 +3086,8 @@ async function verifyHuman(request, env, body) {
   if (mode === 'hcaptcha') {
     return verifyHCaptcha(authSettings.hcaptchaSecret, body.hcaptchaToken, getClientIp(request));
   }
-  return true;
+  console.warn(`[auth] 未知的 verificationMode: ${JSON.stringify(mode)}，按 fail-closed 拒绝`);
+  return false;
 }
 
 
@@ -3358,6 +3379,7 @@ async function resetPassword(request, env) {
     .bind(hash, salt, now(), user.id)
     .run();
   await env.DB_USERS.prepare('DELETE FROM verify_codes WHERE email = ?').bind(email.toLowerCase()).run();
+  await env.DB_USERS.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').bind(user.id).run();
   return jsonResponse(0, null, '密码已重置，请使用新密码登录');
 }
 
@@ -3381,7 +3403,7 @@ async function changePassword(request, env, user) {
     .bind(user.id)
     .first();
   if (!row) return jsonResponse(404, null, '用户不存在');
-  if (row.status === 'banned') return jsonResponse(403, null, '账号已被禁用');
+  if (row.status !== 1) return jsonResponse(403, null, '账号已被禁用');
 
   const valid = await verifyPassword(currentPassword, row.password_salt, row.password_hash);
   if (!valid) return jsonResponse(403, null, '当前密码不正确');
@@ -3392,6 +3414,7 @@ async function changePassword(request, env, user) {
   )
     .bind(hash, salt, now(), user.id)
     .run();
+  await env.DB_USERS.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').bind(user.id).run();
   return jsonResponse(0, null, '密码已修改');
 }
 
@@ -3528,6 +3551,9 @@ async function createComment(request, env, user) {
 
   const settings = (await getSetting(env, 'interaction')) || {};
   if (settings.commentsEnabled === false) return jsonResponse(403, null, '评论功能已关闭');
+
+  if (!(await checkRateLimit(env, `cmt:uid:${user.id}`, 5, 300)))
+    return jsonResponse(429, null, '评论过于频繁，请稍后再试', 429);
 
   const body = await request.json();
   const content = String(body.content || '').trim();
@@ -3795,6 +3821,9 @@ async function createLike(request, env, user) {
 
   const settings = (await getSetting(env, 'interaction')) || {};
   if (settings.likesEnabled === false) return jsonResponse(403, null, '点赞功能已关闭');
+
+  if (!(await checkRateLimit(env, `like:uid:${user.id}`, 30, 3600)))
+    return jsonResponse(429, null, '点赞过于频繁，请稍后再试', 429);
 
   try {
     await env.DB_POSTS.prepare('INSERT INTO likes (post_id, user_id, created_at) VALUES (?, ?, ?)')
@@ -4387,6 +4416,10 @@ async function createMessage(request, env, user) {
   const settings = (await getSetting(env, 'message_wall')) || {};
   if (settings.enabled === false) return jsonResponse(403, null, '留言墙功能已关闭');
 
+  const msgIp = getClientIp(request);
+  if (!(await checkRateLimit(env, `msg:ip:${msgIp}`, user ? 20 : 5, 3600)))
+    return jsonResponse(429, null, '留言过于频繁，请稍后再试', 429);
+
   const body = await request.json();
   const content = String(body.content || '').trim();
   if (!content) return jsonResponse(400, null, '留言内容不能为空');
@@ -4562,10 +4595,29 @@ async function listAdminUsers(request, env, user) {
 
 async function updateAdminUser(request, env, user) {
   const id = parseInt(request.url.split('/').pop(), 10);
+  if (Number.isNaN(id)) return jsonResponse(400, null, '用户 ID 无效');
   const body = await request.json();
 
-  const target = await env.DB_USERS.prepare('SELECT id FROM users WHERE id = ?').bind(id).first();
+  const target = await env.DB_USERS.prepare('SELECT id, role, status FROM users WHERE id = ?').bind(id).first();
   if (!target) return jsonResponse(404, null, '用户不存在', 404);
+
+  const VALID_ROLES = ['guest', 'admin', 'super_admin'];
+  if (body.role !== undefined && !VALID_ROLES.includes(String(body.role))) {
+    return jsonResponse(400, null, '无效的角色');
+  }
+  const losesSuper =
+    target.role === 'super_admin' &&
+    ((body.role !== undefined && String(body.role) !== 'super_admin') ||
+     (body.status !== undefined && !body.status));
+  if (losesSuper) {
+    const others = await env.DB_USERS.prepare(
+      "SELECT COUNT(*) as c FROM users WHERE role = 'super_admin' AND status = 1 AND id != ?"
+    ).bind(id).first();
+    if (others.c <= 0) return jsonResponse(403, null, '不能降级或禁用最后一个可用的超级管理员');
+  }
+  if (id === user.id && body.role !== undefined && String(body.role) !== target.role) {
+    return jsonResponse(403, null, '不能修改自己的角色，请由其他超级管理员操作');
+  }
 
   const updates = [];
   const params = [];
@@ -5940,13 +5992,13 @@ const SKILL_WRITE = {
 
 const writeConfirmMap = new Map();
 
-function waitWriteConfirm(token, timeoutMs = 5 * 60 * 1000) {
+function waitWriteConfirm(token, userId, timeoutMs = 5 * 60 * 1000) {
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       writeConfirmMap.delete(token);
       resolve({ approved: false, reason: '确认超时，操作未执行' });
     }, timeoutMs);
-    writeConfirmMap.set(token, { resolve, timer });
+    writeConfirmMap.set(token, { resolve, timer, userId: String(userId == null ? '' : userId) });
   });
 }
 
@@ -5957,6 +6009,7 @@ async function confirmWriteAction(request, env, user) {
   const approved = body.approved !== false;
   const pending = token && writeConfirmMap.get(token);
   if (!pending) return jsonResponse(404, null, '确认请求不存在或已超时', 404);
+  if (pending.userId !== String(user.id)) return jsonResponse(403, null, '无权确认该操作', 403);
   clearTimeout(pending.timer);
   writeConfirmMap.delete(token);
   pending.resolve({ approved });
@@ -6610,10 +6663,10 @@ async function executeWriteSkill(skillId, args, ctx) {
   if (!ctx.send || !ctx.waitWriteConfirm) {
     return { ok: false, needConfirm: true, error: '此操作需要确认后才能执行' };
   }
-  const token = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  const token = crypto.randomUUID();
   const target = describeWriteAction(skillId, args);
   ctx.send('confirm_request', { token, skill: skillId, target, params: summarizeToolArgsJson(args) });
-  const decision = await ctx.waitWriteConfirm(token);
+  const decision = await ctx.waitWriteConfirm(token, ctx.user && ctx.user.id);
   if (!decision || !decision.approved) {
     return { ok: false, cancelled: true, error: decision && decision.reason ? decision.reason : '用户取消了此操作' };
   }
@@ -7938,7 +7991,9 @@ export default {
       
       
       if (path.startsWith('/api/chat/')) {
-        
+        const chatSettings = (await getSetting(env, 'chat')) || {};
+        if (chatSettings.enabled === false) return rejectChatSocket('聊天功能已关闭');
+
         if (path === '/api/chat/check-nickname') {
           const name = (url.searchParams.get('name') || '').trim();
           if (!name) return jsonResponse(400, null, '昵称不能为空', 400);
@@ -7959,6 +8014,9 @@ export default {
         
         let identity = null;
         let forwarded = new Request(chatUrl.toString(), request);
+        forwarded.headers.delete('x-user-id');
+        forwarded.headers.delete('x-username');
+        forwarded.headers.delete('x-room-max-users');
         if (roomKey === PUBLIC_CHAT_ROOM_KEY) {
           const guestName = (chatUrl.searchParams.get('nickname') || '').trim();
           

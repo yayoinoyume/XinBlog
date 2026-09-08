@@ -32,6 +32,9 @@ compile.log
 .cache
 coverage
 
+# 本地备份目录（.bak 时间戳快照，不入库）
+.backups
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -42,3 +45,12 @@ coverage
 *.njsproj
 *.sln
 *.sw?
+
+# 本地开发工具（wrangler 模拟器，不入库）
+.dev.vars
+.wrangler/
+wrangler.toml
+
+# 优化方案文档（本地 .bak 方式管理，不入库）
+docs/OPTIMIZATION_PLAN.md
+docs/FIX_PLAN.md

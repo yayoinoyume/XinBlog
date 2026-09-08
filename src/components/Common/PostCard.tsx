@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import {
   Paper,
   CardContent,
@@ -104,7 +105,7 @@ function adaptThemeForLayout(theme: PostCardThemeConfig, forcedLayout?: 'overlay
   return next;
 }
 
-export function PostCard({ post, theme, forcedLayout, height, index }: PostCardProps) {
+function PostCardBase({ post, theme, forcedLayout, height, index }: PostCardProps) {
   const { config } = useSiteStore();
   const themeConfig = useThemeConfigStore();
   const activeColors = getActiveColors(themeConfig);
@@ -514,6 +515,8 @@ export function PostCard({ post, theme, forcedLayout, height, index }: PostCardP
 
   );
 }
+
+export const PostCard = memo(PostCardBase);
 
 export function PostCardSkeleton() {
   const { config } = useSiteStore();

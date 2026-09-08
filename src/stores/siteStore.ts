@@ -539,22 +539,24 @@ export const useSiteStore = create<SiteState>((set, get) => ({
       const merged = normalizeSiteConfig({ ...defaultConfig, ...cached });
       applySiteMeta(merged);
       set({ config: merged, loaded: true });
-      apiGet<{ site: SiteConfig }>(`/api/v1/site?_=${Date.now()}`)
+      apiGet<{ site: SiteConfig }>('/api/v1/site', { cache: 'no-cache' })
         .then((res) => {
           if (res.code === 0 && res.data?.site) {
             const m = normalizeSiteConfig({ ...defaultConfig, ...res.data.site });
-            applySiteMeta(m);
             setCachedSiteConfig(m);
-            set({ config: m, loaded: true });
+            if (JSON.stringify(m) !== JSON.stringify(get().config)) {
+              applySiteMeta(m);
+              set({ config: m, loaded: true });
+            }
           }
         })
         .catch(() => {});
       return;
     }
     
-    const url = `/api/v1/site?_=${Date.now()}`;
+    const url = '/api/v1/site';
     try {
-      const res = await apiGet<{ site: SiteConfig }>(url);
+      const res = await apiGet<{ site: SiteConfig }>(url, { cache: 'no-cache' });
       if (res.code === 0 && res.data?.site) {
         const merged = normalizeSiteConfig({ ...defaultConfig, ...res.data.site });
         applySiteMeta(merged);

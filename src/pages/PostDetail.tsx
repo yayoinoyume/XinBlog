@@ -56,7 +56,7 @@ export function PostDetail() {
       return () => { mounted = false; };
     }
 
-    Promise.all([fetchPostBySlug(slug), fetchPosts()]).then(([postData, postsData]) => {
+    Promise.all([fetchPostBySlug(slug), fetchPosts({ fields: 'lite' })]).then(([postData, postsData]) => {
       if (!mounted) return;
       setPost(postData);
       setSiblings(postsData);

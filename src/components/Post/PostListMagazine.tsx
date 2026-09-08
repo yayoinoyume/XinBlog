@@ -9,6 +9,9 @@ interface PostListMagazineProps {
   theme?: PostCardThemeConfig;
 }
 
+const MAGAZINE_FEATURED_HEIGHT = { xs: 320, sm: 400, md: 480 };
+const MAGAZINE_ITEM_HEIGHT = { xs: 260, sm: 300, md: 340 };
+
 export function PostListMagazine({ posts, theme }: PostListMagazineProps) {
   const themeMui = useTheme();
   const isDesktop = useMediaQuery(themeMui.breakpoints.up('md'));
@@ -23,12 +26,12 @@ export function PostListMagazine({ posts, theme }: PostListMagazineProps) {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: gap / 8 }}>
-      <PostCard post={featured} theme={theme} forcedLayout="overlay" height={{ xs: 320, sm: 400, md: 480 }} />
+      <PostCard post={featured} theme={theme} forcedLayout="overlay" height={MAGAZINE_FEATURED_HEIGHT} />
       {rest.length > 0 && (
         <Grid container spacing={gap / 8}>
           {rest.map((post) => (
             <Grid item xs={12} md={6} key={post.id} sx={{ display: 'flex', flexDirection: 'column' }}>
-              <PostCard post={post} theme={theme} forcedLayout="overlay" height={{ xs: 260, sm: 300, md: 340 }} />
+              <PostCard post={post} theme={theme} forcedLayout="overlay" height={MAGAZINE_ITEM_HEIGHT} />
             </Grid>
 
           ))}
