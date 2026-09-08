@@ -36,7 +36,7 @@ export function PostsWidget({ config }: { config: HeroWidgetConfig }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetchPostsPage({ page: 1, limit: displayLimit })
+    fetchPostsPage({ page: 1, limit: displayLimit, fields: 'lite' })
       .then((res) => {
         if (!cancelled) setPosts(res.list);
       })

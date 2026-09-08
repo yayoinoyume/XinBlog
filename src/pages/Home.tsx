@@ -58,7 +58,7 @@ export function Home() {
     else setLoadingMore(true);
 
     const [postsData, tagsData] = await Promise.all([
-      fetchPostsPage({ page: targetPage, limit: pageSize }),
+      fetchPostsPage({ page: targetPage, limit: pageSize, fields: 'lite' }),
       fetchTags(),
     ]);
 
@@ -75,7 +75,7 @@ export function Home() {
   const loadAllForSearch = useCallback(async () => {
     const key = ++requestKeyRef.current;
     setLoading(true);
-    const [allPosts, tagsData] = await Promise.all([fetchAllPosts(), fetchTags()]);
+    const [allPosts, tagsData] = await Promise.all([fetchAllPosts('', 'lite'), fetchTags()]);
     if (key !== requestKeyRef.current) return;
     setPosts(allPosts);
     setTotal(allPosts.length);
