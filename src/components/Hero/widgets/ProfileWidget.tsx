@@ -1,6 +1,8 @@
-import { Avatar, Box, Chip, Stack, Typography, alpha } from '@mui/material';
+import { Avatar, Box, Chip, Stack, Typography, IconButton, Tooltip, alpha } from '@mui/material';
 import { useSiteStore } from '@/stores/siteStore';
 import type { HeroWidgetConfig } from '@/types';
+import { getSocialPlatformIcon } from '@/utils/socialLinks';
+import { getSocialDomain, normalizeSocials } from '@/utils/socialLinks';
 
 interface ProfileWidgetPropsFromConfig {
   showAvatar?: boolean;
@@ -124,10 +126,54 @@ export function ProfileWidget({ config }: { config: HeroWidgetConfig }) {
 
       )}
 
-      {displaySocial && (
-        <Typography variant="caption" color="text.secondary">
-          社交链接将在这里展示
-        </Typography>
+      {displaySocial && normalizeSocials(about.socials).length > 0 && (
+        <Stack
+          direction="row"
+          spacing={0.75}
+          sx={{ mt: 1, flexWrap: 'wrap' }}
+          justifyContent="center"
+          alignItems="center"
+        >
+          {normalizeSocials(about.socials).map((social) => {
+            const Icon = getSocialPlatformIcon(social.platform);
+            return (
+              <Tooltip key={social.url} title={social.label} placement="top">
+                <IconButton
+                  component="a"
+                  href={social.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={social.label || getSocialDomain(social.url)}
+                  size="small"
+                  sx={{
+                    width: isTiny ? 26 : 32,
+                    height: isTiny ? 26 : 32,
+                    color: 'primary.main',
+                    border: (theme) =>
+                      `1px solid ${alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.2 : 0.35)}`,
+                    backgroundColor: (theme) =>
+                      alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.08 : 0.18),
+                    '&:hover': {
+                      backgroundColor: 'primary.main',
+                      color: (theme) => theme.palette.getContrastText(theme.palette.primary.main),
+                    },
+                  }}
+                >
+                  {social.icon ? (
+                    <Box
+                      component="img"
+                      src={social.icon}
+                      alt=""
+                      sx={{ width: 16, height: 16, objectFit: 'contain' }}
+                    />
+                  ) : (
+                    <Icon size={isTiny ? 15 : 17} />
+                  )}
+                </IconButton>
+              </Tooltip>
+            );
+          })}
+        </Stack>
 
       )}
     </Box>

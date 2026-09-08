@@ -9,11 +9,12 @@ import { useUIStore } from '@/stores/uiStore';
 import { fetchPosts } from '@/api/posts';
 import { uploadMedia } from '@/api/media';
 import { useSnackbar } from 'notistack';
-import type { HeroConfig, AboutConfig, Post, PaginationMode, UserFont, UserCursor, NavConfig, NavItemConfig, NavThemeConfig, ClickEffectConfig, SpacingConfig } from '@/types';
+import type { HeroConfig, AboutConfig, Post, PaginationMode, UserFont, UserCursor, NavConfig, NavItemConfig, NavThemeConfig, ClickEffectConfig, SpacingConfig, SocialLink } from '@/types';
 import { DEFAULT_SPACING, resolveSpacingConfig } from '@/utils/spacingConfig';
 import type { PostLayoutMode } from '@/stores/uiStore';
 import { toAbsoluteCloudUrl } from '@/config';
 import { getBase64Size, compressImage } from '@/utils/image';
+import { sanitizeSocialUrl } from '@/utils/socialLinks';
 
 const MAX_HERO_IMAGE_SIZE = 500 * 1024;
 const MAX_ICON_SIZE = 100 * 1024;
@@ -288,6 +289,7 @@ export function useAppearanceEditor() {
   const [aboutSubtitle, setAboutSubtitle] = useState(about.subtitle ?? '');
   const [aboutBio, setAboutBio] = useState(about.bio ?? '');
   const [aboutTags, setAboutTags] = useState((about.tags ?? []).join('、'));
+  const [aboutSocials, setAboutSocials] = useState<SocialLink[]>((about.socials ?? []).map((s) => ({ ...s })));
 
   useEffect(() => {
     const c = site.config;
@@ -314,6 +316,7 @@ export function useAppearanceEditor() {
     setAboutSubtitle(aboutCfg.subtitle ?? '');
     setAboutBio(aboutCfg.bio ?? '');
     setAboutTags((aboutCfg.tags ?? []).join('、'));
+    setAboutSocials((aboutCfg.socials ?? []).map((s) => ({ ...s })));
     const navCfg = c.nav || { items: [] };
     setNavItems(navCfg.items || []);
     const nt = navCfg.theme || defaultNavTheme;
@@ -378,6 +381,7 @@ export function useAppearanceEditor() {
     if (aboutSubtitle !== (currentAbout.subtitle ?? '')) return true;
     if (aboutBio !== (currentAbout.bio ?? '')) return true;
     if (aboutTags !== currentTags) return true;
+    if (JSON.stringify(aboutSocials) !== JSON.stringify(currentAbout.socials ?? [])) return true;
 
     const currentNav = site.config.nav || { items: [] };
     if (JSON.stringify(navItems) !== JSON.stringify(currentNav.items || [])) return true;
@@ -447,6 +451,7 @@ export function useAppearanceEditor() {
     aboutSubtitle,
     aboutBio,
     aboutTags,
+    aboutSocials,
     navItems,
     navVariant,
     navGlassOpacity,
@@ -570,6 +575,14 @@ export function useAppearanceEditor() {
         .split(/[、,，]/)
         .map((t) => t.trim())
         .filter(Boolean),
+      socials: aboutSocials
+        .map((s) => ({
+          platform: s.platform.trim(),
+          label: s.label.trim(),
+          url: sanitizeSocialUrl(s.url),
+          icon: s.icon?.trim() || undefined,
+        }))
+        .filter((s) => s.label && s.url),
     };
 
     const navConfig: NavConfig = {
@@ -674,6 +687,7 @@ export function useAppearanceEditor() {
       setAboutSubtitle(savedAbout.subtitle ?? '');
       setAboutBio(savedAbout.bio ?? '');
       setAboutTags((savedAbout.tags ?? []).join('、'));
+      setAboutSocials((savedAbout.socials ?? []).map((s) => ({ ...s })));
       const savedNav = sc.nav || { items: [] };
       setNavItems(savedNav.items || []);
       const savedNavTheme = savedNav.theme || defaultNavTheme;
@@ -1067,6 +1081,8 @@ export function useAppearanceEditor() {
     setAboutBio,
     aboutTags,
     setAboutTags,
+    aboutSocials,
+    setAboutSocials,
     
     isDirty,
     handleImageUpload,

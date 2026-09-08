@@ -382,11 +382,21 @@ export interface HeroConfig {
   layout?: HeroLayout;
 }
 
+export interface SocialLink {
+  platform: string;
+  label: string;
+  url: string;
+  /** 自定义图标图片 URL（可选）。有则优先显示图片，否则按 platform 匹配内置图标。 */
+  icon?: string;
+}
+
 export interface AboutConfig {
   avatar?: string;
   subtitle?: string;
   bio?: string;
   tags?: string[];
+  /** 社交链接（GitHub / X / 微信等，任意数量，图标按钮展示） */
+  socials?: SocialLink[];
 }
 
 export interface NavItem {
