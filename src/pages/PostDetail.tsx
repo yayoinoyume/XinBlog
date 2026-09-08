@@ -39,7 +39,9 @@ export function PostDetail() {
     
     const cachedPosts = peekCache<PostsResponse>('/api/v1/posts');
     const cachedPost = cachedPosts.data?.list.find((p) => p.slug === slug);
-    const initialPost = cachedPost ? transformPost(cachedPost) : null;
+    // 仅当缓存快照包含全文时才走快照渲染路径；lite 列表（无 content）直接走完整加载，
+    // 避免先渲染空白正文再覆盖（闪烁），也避免 fetchPostBySlug 失败时正文永久空白。
+    const initialPost = cachedPost && cachedPost.content ? transformPost(cachedPost) : null;
     const initialSiblings = cachedPosts.data?.list.map((p) => transformPost(p)) || [];
 
     if (initialPost) {
