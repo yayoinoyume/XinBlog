@@ -63,6 +63,7 @@ const DEFAULT_MUSIC_CONFIG: MusicPlayerConfig = {
 const defaultConfig: SiteConfig = {
   author: 'Xin',
   siteName: 'XinBlog',
+  seoVerifications: [],
   shareDescription: 'XinBlog - 一个记录生活、设计与技术感悟的个人博客',
   shareImage: '',
   themeColor: '#5b7cfa',

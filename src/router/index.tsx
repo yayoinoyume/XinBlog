@@ -27,6 +27,7 @@ const AdminSettings = lazy(() => import('@/pages/admin/AdminSettings').then((m) 
 const AdminLive2d = lazy(() => import('@/pages/admin/Live2d').then((m) => ({ default: m.AdminLive2d })));
 const AdminMusic = lazy(() => import('@/pages/admin/Music').then((m) => ({ default: m.AdminMusic })));
 const AdminAdvancedSettings = lazy(() => import('@/pages/admin/AdvancedSettings').then((m) => ({ default: m.AdvancedSettings })));
+const AdminSeoSettings = lazy(() => import('@/pages/admin/SeoSettings').then((m) => ({ default: m.SeoSettings })));
 const AdminComments = lazy(() => import('@/pages/admin/Comments').then((m) => ({ default: m.AdminComments })));
 const AdminFriends = lazy(() => import('@/pages/admin/Friends').then((m) => ({ default: m.AdminFriends })));
 const AdminAi = lazy(() => import('@/pages/admin/Ai').then((m) => ({ default: m.Ai })));
@@ -232,6 +233,7 @@ export const router = createBrowserRouter([
       { path: 'live2d', element: <SuspensePage><RequireSuper><AdminLive2d /></RequireSuper></SuspensePage> },
       { path: 'music', element: <SuspensePage><RequireSuper><AdminMusic /></RequireSuper></SuspensePage> },
       { path: 'advanced', element: <SuspensePage><RequireSuper><AdminAdvancedSettings /></RequireSuper></SuspensePage> },
+      { path: 'seo', element: <SuspensePage><RequireSuper><AdminSeoSettings /></RequireSuper></SuspensePage> },
       { path: 'comments', element: <SuspensePage><AdminComments /></SuspensePage> },
 
       { path: 'message-wall', element: <SuspensePage><AdminMessageWall /></SuspensePage> },

@@ -243,6 +243,8 @@ export interface SiteConfig {
   logo?: string;
   favicon?: string;
   siteName?: string;
+  /** 搜索引擎站点验证标签列表（name 为 meta 的 name 属性，如 google-site-verification / msvalidate.01 / baidu-site-verification） */
+  seoVerifications?: { name: string; content: string }[];
   shareDescription?: string;
   shareImage?: string;
   themeColor: string;
