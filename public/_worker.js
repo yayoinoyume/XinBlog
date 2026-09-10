@@ -655,6 +655,8 @@ async function setup(env) {
 const defaultSiteConfig = {
   author: 'Xin',
   siteName: 'XinBlog',
+  // 搜索引擎站点验证标签列表，如 [{ name: 'google-site-verification', content: 'xxx' }]
+  seoVerifications: [],
   shareDescription: 'XinBlog - 一个记录生活、设计与技术感悟的个人博客',
   shareImage: '',
   themeColor: '#5b7cfa',
@@ -807,19 +809,22 @@ function injectSiteMeta(html, config, requestUrl, post, env) {
   if (!image) image = resolveAbsoluteImage('/logo.png', origin);
   image = escapeHtmlMeta(rewriteOgImage(image, origin, env));
 
-  html = html.replace(/<title>.*?<\/title>/i, `<title>${title}</title>`);
+  html = html.replace(/<title>.*?<\/title>/i, () => `<title>${title}</title>`);
   html = html.replace(
     /<meta\s+name=["']description["'][^>]*>/i,
-    `<meta name="description" content="${description}" />`
+    () => `<meta name="description" content="${description}" />`
   );
   html = html.replace(
     /<meta\s+name=["']theme-color["'][^>]*>/i,
-    `<meta name="theme-color" content="${themeColor}" />`
+    () => `<meta name="theme-color" content="${themeColor}" />`
   );
 
   const metaTags = [
     `<link rel="manifest" href="/manifest.json?v=2" />`,
     `<link rel="canonical" href="${escapeHtmlMeta(requestUrl)}" />`,
+    ...((Array.isArray(config.seoVerifications) ? config.seoVerifications : [])
+      .filter((v) => v && typeof v.name === 'string' && v.name.trim() && typeof v.content === 'string' && v.content.trim())
+      .map((v) => `<meta name="${escapeHtmlMeta(v.name.trim())}" content="${escapeHtmlMeta(v.content.trim())}" />`)),
     `<meta name="theme-color" content="${themeColor}" />`,
     `<meta property="og:site_name" content="${siteName}" />`,
     `<meta property="og:title" content="${title}" />`,
@@ -833,7 +838,7 @@ function injectSiteMeta(html, config, requestUrl, post, env) {
     `<meta name="twitter:image" content="${image}" />`,
   ].join('\n');
 
-  return html.replace(/<head>/i, `<head>\n${metaTags}`);
+  return html.replace(/<head>/i, () => `<head>\n${metaTags}`);
 }
 
 async function getManifest(env, requestUrl) {
@@ -1703,7 +1708,18 @@ async function deleteTag(request, env, user) {
 async function updateSettings(request, env, user) {
   const body = await request.json();
   if (body.site) {
-    const { hero, about, friends, ...siteRest } = body.site;
+    const { hero, about, friends, seoVerifications, ...siteRest } = body.site;
+
+    // seoVerifications 白名单化：限条数与长度，防超大配置拖慢每个 HTML 渲染
+    if (seoVerifications !== undefined) {
+      siteRest.seoVerifications = (Array.isArray(seoVerifications) ? seoVerifications : [])
+        .map((v) => ({
+          name: String((v && v.name) || '').trim().slice(0, 200),
+          content: String((v && v.content) || '').trim().slice(0, 1000),
+        }))
+        .filter((v) => v.name && v.content)
+        .slice(0, 20);
+    }
     
     const currentSite = (await getSetting(env, 'site')) || {};
     await setSetting(env, 'site', { ...currentSite, ...siteRest });
