@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { ThemeProvider, CssBaseline, GlobalStyles, alpha } from '@mui/material';
 import { RouterProvider } from 'react-router-dom';
 import { useAppTheme } from '@/theme';
@@ -7,7 +7,6 @@ import { useThemeConfigStore } from '@/stores/themeConfigStore';
 import { useSiteStore } from '@/stores/siteStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useAuthStore } from '@/stores/authStore';
-import { Loading } from '@/components/Common/Loading';
 import { SceneThemeEffects } from '@/themes/scene';
 import { ClickEffect } from '@/components/ClickEffect';
 import { GlobalMusicPlayer } from '@/components/MusicPlayer/GlobalMusicPlayer';
@@ -58,7 +57,6 @@ function GlobalScrollbarStyles() {
 
 function App() {
   const theme = useAppTheme();
-  const [initialized, setInitialized] = useState(false);
   const music = useSiteStore((s) => s.config.music);
 
   useEffect(() => {
@@ -67,13 +65,15 @@ function App() {
       useThemeConfigStore.setState({ borderRadius: 16 });
     }
     
-    const init = async () => {
-      await useSiteStore.getState().loadConfig();
-      await useThemeConfigStore.getState().loadConfig();
-      await useUIStore.getState().loadConfig();
-      setInitialized(true);
-    };
-    init();
+    useSiteStore
+      .getState()
+      .loadConfig()
+      .then(() => {
+        // theme/ui 的 loadConfig 内部无 I/O（同步读 siteStore.config 后 set），
+        // 必须保持 site → theme → ui 顺序，禁止改成 Promise.all
+        void useThemeConfigStore.getState().loadConfig();
+        void useUIStore.getState().loadConfig();
+      });
   }, []);
 
   useEffect(() => {
@@ -136,15 +136,10 @@ function App() {
       <GlobalScrollbarStyles />
       <SceneThemeEffects />
       <ClickEffect />
-      {initialized ? (
-        <MusicPlayerProvider config={music}>
-          <RouterProvider router={router} />
-          <GlobalMusicPlayer />
-        </MusicPlayerProvider>
-
-      ) : (
-        <Loading fullScreen text="正在加载站点配置..." />
-      )}
+      <MusicPlayerProvider config={music}>
+        <RouterProvider router={router} />
+        <GlobalMusicPlayer />
+      </MusicPlayerProvider>
     </ThemeProvider>
 
   );

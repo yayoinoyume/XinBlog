@@ -279,9 +279,21 @@ export function useMusicPlayer(config?: Partial<MusicPlayerConfig>): MusicPlayer
   }, [loadSong]);
 
   
+  const { playlistId, apiUrl } = effective;  // 基础类型，引用稳定
   useEffect(() => {
     void loadPlaylist();
-  }, [loadPlaylist]);
+  }, [loadPlaylist, playlistId, apiUrl]);
+
+  
+  // 站点配置可能晚于挂载到达，配置变化时同步音量/播放模式（初始快照不会自动更新）。
+  // 取舍：直接覆盖，包含上一次会话的 memory 恢复值；此后本会话手动调整不再被覆盖。
+  useEffect(() => {
+    setVolumeState(effective.volume);
+  }, [effective.volume]);
+
+  useEffect(() => {
+    setPlayMode(effective.playMode);
+  }, [effective.playMode]);
 
   
   useEffect(() => {
