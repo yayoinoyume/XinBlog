@@ -80,7 +80,7 @@ export default function PostPreview({ input }: PostPreviewProps) {
   const backgroundBlur = config.backgroundBlur ?? 0;
 
   return (
-    <Box sx={{ height: '100%', minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ flex: 1, height: '100%', minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
       <Box
         sx={{
           position: 'relative',
