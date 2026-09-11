@@ -8,9 +8,11 @@ import ShareButtons from '@/components/Post/ShareButtons';
 interface PostDetailFooterProps {
   post: Post;
   siblings: Post[];
+  /** 预览模式：点赞不发请求，分享链接指向前台文章地址 */
+  preview?: boolean;
 }
 
-export function PostDetailFooter({ post, siblings }: PostDetailFooterProps) {
+export function PostDetailFooter({ post, siblings, preview = false }: PostDetailFooterProps) {
   const currentIndex = siblings.findIndex((p) => p.id === post.id);
   const prevPost = currentIndex > 0 ? siblings[currentIndex - 1] : undefined;
   const nextPost = currentIndex < siblings.length - 1 ? siblings[currentIndex + 1] : undefined;
@@ -27,8 +29,11 @@ export function PostDetailFooter({ post, siblings }: PostDetailFooterProps) {
           flexWrap: { xs: 'wrap', sm: 'nowrap' },
         }}
       >
-        <LikeButton slug={post.slug} />
-        <ShareButtons title={post.title} />
+        <LikeButton slug={post.slug} preview={preview} />
+        <ShareButtons
+          title={post.title}
+          url={preview ? `${window.location.origin}/post/${post.slug}` : undefined}
+        />
       </Box>
 
 

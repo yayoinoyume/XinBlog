@@ -9,6 +9,8 @@ import type { LikeStatus } from '@/types/interaction';
 
 interface LikeButtonProps {
   slug: string;
+  /** 预览模式：不发任何请求，仅渲染未点赞的占位外观 */
+  preview?: boolean;
 }
 
 const pop = keyframes`
@@ -18,7 +20,7 @@ const pop = keyframes`
   100% { transform: scale(1); }
 `;
 
-export default function LikeButton({ slug }: LikeButtonProps) {
+export default function LikeButton({ slug, preview = false }: LikeButtonProps) {
   const { isAuthenticated } = useAuthStore();
   const { enqueueSnackbar } = useSnackbar();
   const [enabled, setEnabled] = useState<boolean | null>(null);
@@ -27,6 +29,7 @@ export default function LikeButton({ slug }: LikeButtonProps) {
   const [popping, setPopping] = useState(false);
 
   useEffect(() => {
+    if (preview) return;
     let mounted = true;
     getInteractionSettings().then((res) => {
       if (mounted && res.code === 0 && res.data) {
@@ -36,10 +39,10 @@ export default function LikeButton({ slug }: LikeButtonProps) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [preview]);
 
   useEffect(() => {
-    if (enabled === false) return;
+    if (preview || enabled === false) return;
     let mounted = true;
     getLikes(slug).then((res) => {
       if (mounted && res.code === 0 && res.data) {
@@ -49,11 +52,15 @@ export default function LikeButton({ slug }: LikeButtonProps) {
     return () => {
       mounted = false;
     };
-  }, [slug, enabled]);
+  }, [slug, enabled, preview]);
 
   if (enabled === false) return null;
 
   const handleToggle = async () => {
+    if (preview) {
+      enqueueSnackbar('预览模式下不能点赞', { variant: 'info' });
+      return;
+    }
     if (!isAuthenticated) {
       enqueueSnackbar('登录后才可以点赞哦', { variant: 'info' });
       return;

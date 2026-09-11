@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
@@ -66,6 +66,7 @@ import {
   ExpandLess,
   ExpandMore,
   MoreVert,
+  Visibility,
 } from '@mui/icons-material';
 import {
   fetchAdminPosts,
@@ -102,6 +103,11 @@ const emptyForm = {
 
 import { getBase64Size, compressImage } from '@/utils/image';
 import { createPortal } from 'react-dom';
+import type { PostPreviewInput, PostPreviewMeta } from './PostPreview';
+
+// 预览面板懒加载：Markdown 渲染链路（react-markdown / rehype-highlight / katex）
+// 只在首次切到预览时才会载入，且与前台详情页路由共享同一份 chunk，不增大后台首屏
+const PostPreviewPanel = lazy(() => import('./PostPreview'));
 
 function slugifyTag(text: string): string {
   return text
@@ -129,6 +135,8 @@ export function AdminPosts() {
   const [tags, setTags] = useState<AdminTag[]>(tagsCache.data?.list || []);
   const [loading, setLoading] = useState(!(postsCache.hit && tagsCache.hit));
   const [view, setView] = useState<'list' | 'editor'>('list');
+  const [previewPane, setPreviewPane] = useState(false);
+  const [editMeta, setEditMeta] = useState<PostPreviewMeta | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -285,6 +293,8 @@ export function AdminPosts() {
     setForm(emptyForm);
     setFormError('');
     setPendingMediaIds([]);
+    setEditMeta(null);
+    setPreviewPane(false);
     setView('editor');
   };
 
@@ -310,10 +320,17 @@ export function AdminPosts() {
       status: full.status,
       tagIds: full.tags?.map((t) => t.id) || [],
     });
+    setEditMeta({
+      createdAt: full.created_at,
+      updatedAt: full.updated_at,
+      readingTime: full.reading_time,
+      views: full.views,
+    });
     setCoverLoading(!!full.cover_base64);
   };
 
   const handleBackToList = async () => {
+    setPreviewPane(false);
     
     for (const mediaId of pendingMediaIds) {
       try {
@@ -1232,6 +1249,21 @@ export function AdminPosts() {
 
   );
 
+  const previewInput = useMemo<PostPreviewInput>(
+    () => ({
+      title: form.title,
+      slug: form.slug,
+      excerpt: form.excerpt,
+      content: form.content,
+      coverBase64: form.coverBase64,
+      tagIds: form.tagIds,
+      allTags: tags,
+      editingId,
+      meta: editMeta,
+    }),
+    [form, tags, editingId, editMeta]
+  );
+
   const editorPanel = (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, minWidth: 0, gap: 2, position: 'relative', overflow: 'hidden' }}>
       <Box ref={editorScrollBoxRef} sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', height: '100%', gap: 2, overflow: 'auto', overscrollBehavior: 'contain', pb: { xs: 10, sm: 0 } }}>
@@ -1275,6 +1307,34 @@ export function AdminPosts() {
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', minWidth: 0 }}>
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={previewPane ? 'preview' : 'edit'}
+            onChange={(_, next) => {
+              if (next) setPreviewPane(next === 'preview');
+            }}
+            aria-label="编辑与预览切换"
+            sx={{ flexShrink: 0 }}
+          >
+            <ToggleButton value="edit" aria-label="编辑" sx={{ textTransform: 'none', px: { xs: 1, sm: 1.5 } }}>
+              <Edit fontSize="small" />
+              <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' }, ml: 0.5 }}>
+                编辑
+              </Box>
+
+            </ToggleButton>
+
+            <ToggleButton value="preview" aria-label="预览" sx={{ textTransform: 'none', px: { xs: 1, sm: 1.5 } }}>
+              <Visibility fontSize="small" />
+              <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' }, ml: 0.5 }}>
+                预览
+              </Box>
+
+            </ToggleButton>
+
+          </ToggleButtonGroup>
+
           <Tooltip title="AI 助手">
             <IconButton
               onClick={() => setAiOpen((v) => !v)}
@@ -1328,6 +1388,7 @@ export function AdminPosts() {
       <Paper
         elevation={0}
         sx={{
+          display: previewPane ? 'none' : 'block',
           p: 2,
           borderRadius: 1,
           boxShadow: (theme) =>
@@ -1677,8 +1738,14 @@ export function AdminPosts() {
             flex: 1,
             display: 'flex',
             overflow: 'hidden',
+            minHeight: 0,
           }}
         >
+          {previewPane ? (
+            <Suspense fallback={<Loading text="加载预览中..." />}>
+              <PostPreviewPanel input={previewInput} />
+            </Suspense>
+          ) : (
           <TextField
             inputRef={editorRef}
             value={form.content}
@@ -1710,6 +1777,7 @@ export function AdminPosts() {
               '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
             }}
           />
+          )}
         </Box>
 
       </Paper>
@@ -1725,7 +1793,7 @@ export function AdminPosts() {
           transform: 'translateY(-50%)',
           zIndex: 1150,
           borderRadius: 2,
-          display: { xs: 'none', md: 'flex' },
+          display: previewPane ? 'none' : { xs: 'none', md: 'flex' },
           flexDirection: 'column',
           alignItems: 'center',
           bgcolor: 'background.paper',

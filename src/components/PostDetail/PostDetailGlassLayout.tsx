@@ -16,6 +16,8 @@ interface PostDetailGlassLayoutProps {
   theme: PostDetailThemeConfig;
   headings: HeadingItem[];
   onHeadingsExtracted?: (headings: HeadingItem[]) => void;
+  /** 预览模式：跳过评论区，点赞/分享走占位实现 */
+  preview?: boolean;
 }
 
 export function PostDetailGlassLayout({
@@ -24,6 +26,7 @@ export function PostDetailGlassLayout({
   theme,
   headings,
   onHeadingsExtracted,
+  preview = false,
 }: PostDetailGlassLayoutProps) {
   const params = theme.params || {};
   const glassOpacity = Number(params.glassOpacity ?? theme.glassOpacity ?? 0.6);
@@ -71,8 +74,8 @@ export function PostDetailGlassLayout({
         <Box sx={{ p: { xs: 2, sm: 3, md: 6 } }}>
           <PostDetailHeader post={post} />
           <PostDetailContent content={post.content} onHeadingsExtracted={onHeadingsExtracted} />
-          <PostDetailFooter post={post} siblings={siblings} />
-          <CommentSection slug={post.slug} />
+          <PostDetailFooter post={post} siblings={siblings} preview={preview} />
+          {!preview && <CommentSection slug={post.slug} />}
         </Box>
 
       </Box>
