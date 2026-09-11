@@ -1325,7 +1325,12 @@ export function AdminPosts() {
 
             </ToggleButton>
 
-            <ToggleButton value="preview" aria-label="预览" sx={{ textTransform: 'none', px: { xs: 1, sm: 1.5 } }}>
+            <ToggleButton
+              value="preview"
+              aria-label="预览"
+              title="预览：按站点当前详情页主题渲染；互动数据为占位，不发请求"
+              sx={{ textTransform: 'none', px: { xs: 1, sm: 1.5 } }}
+            >
               <Visibility fontSize="small" />
               <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' }, ml: 0.5 }}>
                 预览
@@ -1623,7 +1628,7 @@ export function AdminPosts() {
             py: 1,
             borderBottom: '1px solid',
             borderColor: 'divider',
-            display: 'flex',
+            display: previewPane ? 'none' : 'flex',
             alignItems: { xs: 'flex-start', lg: 'center' },
             justifyContent: { xs: 'flex-start', lg: 'space-between' },
             flexDirection: { xs: 'column', lg: 'row' },

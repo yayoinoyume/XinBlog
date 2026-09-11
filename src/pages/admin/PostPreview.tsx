@@ -1,5 +1,5 @@
 import { useDeferredValue, useState } from 'react';
-import { Box, Typography, alpha } from '@mui/material';
+import { Box, alpha } from '@mui/material';
 import type { Post, PostDetailThemeConfig } from '@/types';
 import type { AdminTag } from '@/api/admin';
 import { transformPost, type BackendPost } from '@/api/posts';
@@ -80,30 +80,7 @@ export default function PostPreview({ input }: PostPreviewProps) {
   const backgroundBlur = config.backgroundBlur ?? 0;
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, minWidth: 0, gap: 1 }}>
-      <Box
-        sx={{
-          flexShrink: 0,
-          px: 1.5,
-          py: 0.75,
-          borderRadius: 1,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-          flexWrap: 'wrap',
-          bgcolor: (t) => alpha(t.palette.info.main, t.palette.mode === 'light' ? 0.08 : 0.16),
-        }}
-      >
-        <Typography variant="caption" sx={{ fontWeight: 800, color: 'info.main' }}>
-          预览模式
-        </Typography>
-
-        <Typography variant="caption" color="text.secondary">
-          按站点当前详情页主题渲染。悬浮目录、阅读进度、评论区不在预览范围内，点赞等互动数据为占位，不会产生真实请求。
-        </Typography>
-
-      </Box>
-
+    <Box sx={{ height: '100%', minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
       <Box
         sx={{
           position: 'relative',
