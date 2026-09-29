@@ -706,9 +706,47 @@ async function requireAuth(request, env, handler) {
   return handler(request, env, user);
 }
 
+// ===== 标准管理接口（AI / MCP 自动化通道，2026-09-29 新增）=====
+// 常量时间字符串比较，防止时序侧信道泄露 API Key
+function safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+// API Key 鉴权通过后构造的虚拟用户（不查 users 表）。
+// MANAGE_API_KEY 经 wrangler pages secret 注入，严禁写入仓库；
+// MANAGE_API_AUTHOR_ID 指定 API 发布文章时署名的用户 id，缺省为 1。
+function apiKeyUser(env) {
+  return {
+    id: Number(env.MANAGE_API_AUTHOR_ID) || 1,
+    username: 'api-manage',
+    role: 'super_admin',
+    status: 1,
+  };
+}
+
+// 从请求头取 X-API-Key 并与云端密钥比对；未配置 MANAGE_API_KEY 时永远返回 false
+function hasValidApiKey(request, env) {
+  const apiKey = request.headers.get('X-API-Key');
+  const expect = env.MANAGE_API_KEY ? String(env.MANAGE_API_KEY) : '';
+  if (!apiKey || !expect) return false;
+  return safeEqual(apiKey, expect);
+}
+// ===== 标准管理接口结束 =====
+
 async function requireAdmin(request, env, handler) {
   
   
+  // 标准管理接口：X-API-Key 校验通过则以虚拟管理员身份放行
+  if (hasValidApiKey(request, env)) {
+    return handler(request, env, apiKeyUser(env));
+  }
+
   const user = await getCurrentUser(request, env);
   if (!user) return jsonResponse(401, null, 'Unauthorized', 401);
   if (user.role !== 'admin' && user.role !== 'super_admin') {
@@ -718,6 +756,11 @@ async function requireAdmin(request, env, handler) {
 }
 
 async function requireSuperAdmin(request, env, handler) {
+  // 标准管理接口：X-API-Key 校验通过则以虚拟管理员身份放行
+  if (hasValidApiKey(request, env)) {
+    return handler(request, env, apiKeyUser(env));
+  }
+
   const user = await getCurrentUser(request, env);
   if (!user) return jsonResponse(401, null, 'Unauthorized', 401);
   if (user.role !== 'super_admin') return jsonResponse(403, null, 'Forbidden', 403);
