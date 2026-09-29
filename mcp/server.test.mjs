@@ -108,3 +108,20 @@ test('delete_post 未启用时调用被运行时拦截', async () => {
   assert.equal(call.result.isError, true);
   assert.match(call.result.content[0].text, /未启用/);
 });
+
+test('update_post 只传 id（无任何字段）直接报错不触网', async () => {
+  const msgs = parse(
+    await rpc([
+      INIT,
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: { name: 'update_post', arguments: { id: 1 } },
+      }),
+    ])
+  );
+  const call = msgs.find((m) => m.id === 2);
+  assert.equal(call.result.isError, true);
+  assert.match(call.result.content[0].text, /未提供任何要更新的字段/);
+});

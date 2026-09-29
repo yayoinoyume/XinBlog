@@ -19,6 +19,7 @@
 
 import { createInterface } from 'node:readline';
 import { readFile, stat } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 
 const SITE_URL = (process.env.XINBLOG_SITE_URL || 'https://blog.yayoi.love').replace(/\/+$/, '');
@@ -69,12 +70,23 @@ function int(v, dft) {
   return Number.isFinite(n) ? n : dft;
 }
 
+// 拉取全部标签（分页循环，规避 admin/tags 单页 limit=100 的静默截断），实时无缓存
+async function listAllTags() {
+  const out = [];
+  for (let page = 1; page <= 50; page++) {
+    const data = await api('GET', `/api/v1/admin/tags?limit=100&page=${page}`);
+    const list = (data && data.list) || [];
+    out.push(...list);
+    if (list.length < 100 || out.length >= (data.total || 0)) break;
+  }
+  return out;
+}
+
 // 标签名称 → ID 映射：只匹配已存在标签，匹配不到的跳过并回传 missing，绝不擅自创建。
 // 打 admin/tags（实时无缓存）而非公开 /api/v1/tags（600s 边缘缓存，会导致刚创建的标签匹配不上）
 async function resolveTagIds(names) {
   if (!Array.isArray(names) || names.length === 0) return { tagIds: [], missing: [] };
-  const data = await api('GET', '/api/v1/admin/tags?limit=100');
-  const list = (data && data.list) || [];
+  const list = await listAllTags();
   const byName = new Map(list.map((t) => [t.name, t.id]));
   const tagIds = [];
   const missing = [];
@@ -90,7 +102,8 @@ async function resolveTagIds(names) {
 
 // 封面图允许读取的根目录：默认当前工作目录，可用 XINBLOG_COVER_DIR 调整。
 // 约束目的：防止 Agent 被诱导读取任意本地文件（如 ~/.ssh、.env）并随文章外传
-const COVER_ROOT = resolve(process.env.XINBLOG_COVER_DIR || process.cwd()) + sep;
+const _coverRootRaw = resolve(process.env.XINBLOG_COVER_DIR || process.cwd());
+const COVER_ROOT = _coverRootRaw.endsWith(sep) ? _coverRootRaw : _coverRootRaw + sep;
 
 // 封面：coverBase64 直接传；或 coverFile 读取【COVER_ROOT 内的图片文件】转 base64（限 1MB）
 async function resolveCover(args) {
@@ -109,7 +122,17 @@ async function resolveCover(args) {
     if (!/\.(png|jpe?g|gif|webp|avif)$/i.test(p)) {
       throw new Error('封面图仅支持 png/jpg/gif/webp/avif 格式');
     }
-    const st = await stat(p);
+    // 解析符号链接的真实路径，防止目录内链接指向 COVER_ROOT 之外
+    let real;
+    try {
+      real = realpathSync(p);
+    } catch {
+      throw new Error(`封面图文件不存在或无法访问：${args.coverFile}`);
+    }
+    if (real !== p && !real.startsWith(COVER_ROOT)) {
+      throw new Error('封面图路径包含指向允许目录之外的符号链接');
+    }
+    const st = await stat(real);
     if (st.size > 1024 * 1024) {
       throw new Error(`封面图 ${args.coverFile} 为 ${st.size} 字节，超过 1MB 上限，请压缩后重试`);
     }
@@ -239,16 +262,21 @@ const TOOLS = [
       if (a.content !== undefined && String(a.content)) body.content = String(a.content);
       if (str(a.slug)) body.slug = str(a.slug);
       if (str(a.excerpt)) body.excerpt = str(a.excerpt);
+      let tagWarning = null;
       if (a.tags !== undefined) {
         const { tagIds, missing } = await resolveTagIds(a.tags);
         body.tagIds = tagIds;
         if (missing.length) {
-          body.tagWarnings = `这些标签在博客中不存在，已跳过未关联：${missing.join('、')}`;
+          tagWarning = `这些标签在博客中不存在，已跳过未关联：${missing.join('、')}`;
         }
       }
       const cover = await resolveCover(a);
       if (cover) body.coverBase64 = cover;
       if (str(a.status)) body.status = str(a.status);
+      // 什么都不改的调用直接报错，不静默空转
+      if (!Object.keys(body).length) {
+        throw new Error('未提供任何要更新的字段');
+      }
       // 服务端要求至少一个普通字段才执行 UPDATE；仅更新标签时先回填当前值
       const hasField = ['title', 'content', 'slug', 'excerpt', 'coverBase64', 'status'].some(
         (k) => body[k] !== undefined
@@ -263,7 +291,10 @@ const TOOLS = [
         if (cur.cover_base64) body.coverBase64 = cur.cover_base64;
       }
       await api('PATCH', `/api/v1/admin/posts/${id}`, body);
-      return { id, updated: true, ...body };
+      // 返回固定字段而非展开 body，避免整篇正文/封面塞回 Agent 上下文
+      const out = { id, updated: true, tagIds: body.tagIds ?? null };
+      if (tagWarning) out.tagWarnings = tagWarning;
+      return out;
     },
   },
   {
@@ -274,10 +305,7 @@ const TOOLS = [
       properties: {},
       additionalProperties: false,
     },
-    handler: async () => {
-      const data = await api('GET', '/api/v1/admin/tags?limit=100');
-      return (data && data.list) || [];
-    },
+    handler: async () => listAllTags(),
   },
   {
     name: 'create_tag',
@@ -297,8 +325,7 @@ const TOOLS = [
       const name = str(a.name);
       if (!name) throw new Error('name 必填');
       // 服务端唯一约束在 slug 上，中文名 slug 为空串会静默重复创建，故先按名称查重
-      const data = await api('GET', '/api/v1/admin/tags?limit=100');
-      const list = (data && data.list) || [];
+      const list = await listAllTags();
       if (list.some((t) => t.name === name)) {
         throw new Error(`标签「${name}」已存在，无需重复创建`);
       }

@@ -738,6 +738,8 @@ function isManageApiPath(request) {
 }
 
 // 从请求头取 X-API-Key 并与云端密钥比对；未配置 MANAGE_API_KEY 时永远返回 false
+// （isolate 生命周期内记录已告警过的错误 key，防止未鉴权请求灌水放大日志量）
+let manageApiWarnedKey = '';
 function hasValidApiKey(request, env) {
   const apiKey = request.headers.get('X-API-Key');
   const expect = env.MANAGE_API_KEY ? String(env.MANAGE_API_KEY) : '';
@@ -747,7 +749,10 @@ function hasValidApiKey(request, env) {
     return false;
   }
   if (!safeEqual(apiKey, expect)) {
-    console.warn('标准管理接口：X-API-Key 校验失败');
+    if (manageApiWarnedKey !== apiKey) {
+      manageApiWarnedKey = apiKey;
+      console.warn('标准管理接口：X-API-Key 校验失败（同一错误密钥的后续请求不再重复告警）');
+    }
     return false;
   }
   return true;
