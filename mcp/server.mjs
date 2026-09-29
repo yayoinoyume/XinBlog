@@ -19,6 +19,7 @@
 
 import { createInterface } from 'node:readline';
 import { readFile, stat } from 'node:fs/promises';
+import { resolve, sep } from 'node:path';
 
 const SITE_URL = (process.env.XINBLOG_SITE_URL || 'https://blog.yayoi.love').replace(/\/+$/, '');
 const API_KEY = process.env.XINBLOG_API_KEY || '';
@@ -68,11 +69,12 @@ function int(v, dft) {
   return Number.isFinite(n) ? n : dft;
 }
 
-// 标签名称 → ID 映射：只匹配已存在标签，匹配不到的跳过并回传 missing，绝不擅自创建
+// 标签名称 → ID 映射：只匹配已存在标签，匹配不到的跳过并回传 missing，绝不擅自创建。
+// 打 admin/tags（实时无缓存）而非公开 /api/v1/tags（600s 边缘缓存，会导致刚创建的标签匹配不上）
 async function resolveTagIds(names) {
   if (!Array.isArray(names) || names.length === 0) return { tagIds: [], missing: [] };
-  const data = await api('GET', '/api/v1/tags');
-  const list = Array.isArray(data) ? data : (data && data.list) || [];
+  const data = await api('GET', '/api/v1/admin/tags?limit=100');
+  const list = (data && data.list) || [];
   const byName = new Map(list.map((t) => [t.name, t.id]));
   const tagIds = [];
   const missing = [];
@@ -86,15 +88,32 @@ async function resolveTagIds(names) {
   return { tagIds, missing };
 }
 
-// 封面：coverBase64 直接传；或 coverFile 读本地文件转 base64（限 1MB，D1 存储成本考虑）
+// 封面图允许读取的根目录：默认当前工作目录，可用 XINBLOG_COVER_DIR 调整。
+// 约束目的：防止 Agent 被诱导读取任意本地文件（如 ~/.ssh、.env）并随文章外传
+const COVER_ROOT = resolve(process.env.XINBLOG_COVER_DIR || process.cwd()) + sep;
+
+// 封面：coverBase64 直接传；或 coverFile 读取【COVER_ROOT 内的图片文件】转 base64（限 1MB）
 async function resolveCover(args) {
-  if (str(args.coverBase64)) return str(args.coverBase64);
+  if (str(args.coverBase64)) {
+    const s = str(args.coverBase64);
+    if (s.length * 0.75 > 1024 * 1024) {
+      throw new Error('封面图超过 1MB 上限，请压缩后重试');
+    }
+    return s;
+  }
   if (str(args.coverFile)) {
-    const st = await stat(args.coverFile);
+    const p = resolve(args.coverFile);
+    if (!p.startsWith(COVER_ROOT)) {
+      throw new Error(`封面图必须位于 ${COVER_ROOT} 目录内（可用 XINBLOG_COVER_DIR 环境变量调整）`);
+    }
+    if (!/\.(png|jpe?g|gif|webp|avif)$/i.test(p)) {
+      throw new Error('封面图仅支持 png/jpg/gif/webp/avif 格式');
+    }
+    const st = await stat(p);
     if (st.size > 1024 * 1024) {
       throw new Error(`封面图 ${args.coverFile} 为 ${st.size} 字节，超过 1MB 上限，请压缩后重试`);
     }
-    const buf = await readFile(args.coverFile);
+    const buf = await readFile(p);
     return buf.toString('base64');
   }
   return '';
@@ -137,7 +156,11 @@ const TOOLS = [
       required: ['id'],
       additionalProperties: false,
     },
-    handler: async (a) => api('GET', `/api/v1/admin/posts/${int(a.id)}`),
+    handler: async (a) => {
+      const id = int(a.id);
+      if (!id) throw new Error('id 必填');
+      return api('GET', `/api/v1/admin/posts/${id}`);
+    },
   },
   {
     name: 'publish_post',
@@ -226,25 +249,41 @@ const TOOLS = [
       const cover = await resolveCover(a);
       if (cover) body.coverBase64 = cover;
       if (str(a.status)) body.status = str(a.status);
+      // 服务端要求至少一个普通字段才执行 UPDATE；仅更新标签时先回填当前值
+      const hasField = ['title', 'content', 'slug', 'excerpt', 'coverBase64', 'status'].some(
+        (k) => body[k] !== undefined
+      );
+      if (!hasField) {
+        const cur = await api('GET', `/api/v1/admin/posts/${id}`);
+        body.title = cur.title;
+        body.content = cur.content;
+        body.slug = cur.slug;
+        body.excerpt = cur.excerpt || '';
+        body.status = cur.status;
+        if (cur.cover_base64) body.coverBase64 = cur.cover_base64;
+      }
       await api('PATCH', `/api/v1/admin/posts/${id}`, body);
       return { id, updated: true, ...body };
     },
   },
   {
     name: 'list_tags',
-    description: '列出博客全部标签（ID、名称、别名、颜色、文章数）。只读操作。',
+    description: '列出博客全部标签（ID、名称、别名、颜色、文章数，最多 100 条）。只读操作，实时数据。',
     inputSchema: {
       type: 'object',
       properties: {},
       additionalProperties: false,
     },
-    handler: async () => api('GET', '/api/v1/tags'),
+    handler: async () => {
+      const data = await api('GET', '/api/v1/admin/tags?limit=100');
+      return (data && data.list) || [];
+    },
   },
   {
     name: 'create_tag',
     description:
       '【写操作·需用户确认】新建标签。' + WRITE_RULE +
-      ' 仅在用户同意创建新标签时调用；同名标签已存在时会返回 409 错误。',
+      ' 仅在用户同意创建新标签时调用；已存在同名标签时会直接报错，不会重复创建。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -257,6 +296,12 @@ const TOOLS = [
     handler: async (a) => {
       const name = str(a.name);
       if (!name) throw new Error('name 必填');
+      // 服务端唯一约束在 slug 上，中文名 slug 为空串会静默重复创建，故先按名称查重
+      const data = await api('GET', '/api/v1/admin/tags?limit=100');
+      const list = (data && data.list) || [];
+      if (list.some((t) => t.name === name)) {
+        throw new Error(`标签「${name}」已存在，无需重复创建`);
+      }
       const body = { name };
       if (str(a.color)) body.color = str(a.color);
       return api('POST', '/api/v1/admin/tags', body);
@@ -304,17 +349,24 @@ async function handleMessage(msg) {
 
   try {
     switch (method) {
-      case 'initialize':
-        send({
-          jsonrpc: '2.0',
-          id,
-          result: {
-            protocolVersion: (params && params.protocolVersion) || '2024-11-05',
-            capabilities: { tools: {} },
-            serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-          },
-        });
+      case 'initialize': {
+        // MCP 规范：客户端请求的版本服务端不支持时，必须回服务端支持的版本而非原样回显
+        const SUPPORTED = ['2025-06-18', '2025-03-26', '2024-11-05'];
+        const want = params && params.protocolVersion;
+        const ver = SUPPORTED.includes(want) ? want : '2024-11-05';
+        if (hasId) {
+          send({
+            jsonrpc: '2.0',
+            id,
+            result: {
+              protocolVersion: ver,
+              capabilities: { tools: {} },
+              serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
+            },
+          });
+        }
         return;
+      }
       case 'notifications/initialized':
       case 'initialized':
       case 'notifications/cancelled':

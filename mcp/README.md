@@ -101,7 +101,7 @@ npx lody mcp add xinblog -- node <repo>/mcp/server.mjs
 | `get_post` | 只读 | 单篇完整内容 |
 | `publish_post` | **写** | 发布新文章（标题/正文/摘要/英文别名/标签/封面/草稿或直接发布） |
 | `update_post` | **写** | 更新已有文章字段 |
-| `list_tags` | 只读 | 标签列表 |
+| `list_tags` | 只读 | 标签列表（实时数据，最多 100 条） |
 | `create_tag` | **写** | 新建标签 |
 | `delete_post` | **高危写** | 删除文章（默认不注册，需 `XINBLOG_ENABLE_DELETE=1`） |
 
@@ -139,4 +139,6 @@ printf '%s\n' \
 
 - 文章列表接口有 10 分钟边缘缓存：发布后详情页立即可见，列表页最晚 10 分钟出现（博客原有行为，非本接入件引入）。
 - `slug` 留空时中文标题会生成 `post-时间戳` 形式，建议 Agent 生成语义化英文别名。
+- 标签读取走 `GET /api/v1/admin/tags`（实时）；公开的 `/api/v1/tags` 有 10 分钟边缘缓存，仅建议前台使用。
+- `coverFile` 只允许读取 MCP server 启动目录内的图片文件（可用 `XINBLOG_COVER_DIR` 调整根目录），防止任意文件外传。
 - `author_id` 来自 `MANAGE_API_AUTHOR_ID`，后台用户界面中文章作者显示为该用户。

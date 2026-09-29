@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "compile": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test mcp/server.test.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",

@@ -725,25 +725,43 @@ function apiKeyUser(env) {
   return {
     id: Number(env.MANAGE_API_AUTHOR_ID) || 1,
     username: 'api-manage',
-    role: 'super_admin',
+    role: 'admin',
     status: 1,
   };
+}
+
+// 标准管理接口：X-API-Key 通道的路径白名单，仅放行文章/标签管理，
+// 杜绝该密钥触达用户/设置/AI 密钥等超管面路由
+function isManageApiPath(request) {
+  const p = new URL(request.url).pathname;
+  return p.startsWith('/api/v1/admin/posts') || p.startsWith('/api/v1/admin/tags');
 }
 
 // 从请求头取 X-API-Key 并与云端密钥比对；未配置 MANAGE_API_KEY 时永远返回 false
 function hasValidApiKey(request, env) {
   const apiKey = request.headers.get('X-API-Key');
   const expect = env.MANAGE_API_KEY ? String(env.MANAGE_API_KEY) : '';
-  if (!apiKey || !expect) return false;
-  return safeEqual(apiKey, expect);
+  if (!apiKey) return false;
+  if (!expect) {
+    console.warn('标准管理接口：请求携带 X-API-Key 但服务端未配置 MANAGE_API_KEY');
+    return false;
+  }
+  if (!safeEqual(apiKey, expect)) {
+    console.warn('标准管理接口：X-API-Key 校验失败');
+    return false;
+  }
+  return true;
 }
 // ===== 标准管理接口结束 =====
 
 async function requireAdmin(request, env, handler) {
   
   
-  // 标准管理接口：X-API-Key 校验通过则以虚拟管理员身份放行
+  // 标准管理接口：X-API-Key 校验通过且路径在白名单内则以虚拟管理员身份放行
   if (hasValidApiKey(request, env)) {
+    if (!isManageApiPath(request)) {
+      return jsonResponse(403, null, 'API Key 通道仅限文章/标签接口', 403);
+    }
     return handler(request, env, apiKeyUser(env));
   }
 
@@ -756,8 +774,11 @@ async function requireAdmin(request, env, handler) {
 }
 
 async function requireSuperAdmin(request, env, handler) {
-  // 标准管理接口：X-API-Key 校验通过则以虚拟管理员身份放行
+  // 标准管理接口：X-API-Key 校验通过且路径在白名单内则以虚拟管理员身份放行
   if (hasValidApiKey(request, env)) {
+    if (!isManageApiPath(request)) {
+      return jsonResponse(403, null, 'API Key 通道仅限文章/标签接口', 403);
+    }
     return handler(request, env, apiKeyUser(env));
   }
 
