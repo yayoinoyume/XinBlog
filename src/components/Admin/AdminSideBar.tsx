@@ -42,18 +42,15 @@ import { useAuthStore } from '@/stores/authStore';
 import { isSuperAdmin } from '@/utils/permission';
 import { Logo } from '@/components/Common/Logo';
 import { LogoutConfirmDialog } from '@/components/Common/LogoutConfirmDialog';
-
 export const adminDrawerWidth = 260;
 export const adminMiniDrawerWidth = 56;
 export const adminMobileDrawerWidth = 1;
-
 interface AdminSideBarProps {
   collapsed: boolean;
   onToggle: () => void;
   mobileOpen: boolean;
   onMobileClose: () => void;
 }
-
 const adminNavItems: NavItem[] = [
   { title: '概览', path: '/admin', icon: <Dashboard fontSize="small" /> },
   { title: '文章', path: '/admin/posts', icon: <Article fontSize="small" /> },
@@ -73,7 +70,6 @@ const adminNavItems: NavItem[] = [
   { title: 'SEO 设置', path: '/admin/seo', icon: <TravelExplore fontSize="small" />, superOnly: true },
   { title: '用户管理', path: '/admin/users', icon: <Group fontSize="small" />, superOnly: true },
 ];
-
 export function AdminSideBar({
   collapsed,
   onToggle,
@@ -84,31 +80,24 @@ export function AdminSideBar({
   const { isAuthenticated, user, logout } = useAuthStore();
   const [isAnimating, setIsAnimating] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
-
-  
   const isSuper = isSuperAdmin(user?.role);
   const navItems = isSuper ? adminNavItems : adminNavItems.filter((item) => !item.superOnly);
-
   const handleToggle = () => {
     setIsAnimating(true);
     onToggle();
   };
-
   useEffect(() => {
     if (!isAnimating) return;
     const timer = setTimeout(() => setIsAnimating(false), DRAWER_TRANSITION_MS);
     return () => clearTimeout(timer);
   }, [isAnimating, collapsed]);
-
   const handleLogout = () => {
     if (isAuthenticated) {
       setLogoutOpen(true);
     }
     onMobileClose();
   };
-
   const drawerContent = (isCollapsed: boolean) => {
-    
     if (isCollapsed) {
       return (
         <Box
@@ -141,8 +130,6 @@ export function AdminSideBar({
           >
             <ChevronRight />
           </IconButton>
-
-
           {}
           <Stack
             sx={{
@@ -184,12 +171,9 @@ export function AdminSideBar({
                   >
                     {item.icon}
                   </IconButton>
-
                 </Tooltip>
-
               );
             })}
-
             <Tooltip title="返回首页" placement="right">
               <IconButton
                 component={Link}
@@ -214,16 +198,11 @@ export function AdminSideBar({
               >
                 <Home fontSize="small" />
               </IconButton>
-
             </Tooltip>
-
           </Stack>
-
         </Box>
-
       );
     }
-
     return (
       <Box
         sx={{
@@ -239,7 +218,6 @@ export function AdminSideBar({
           <Box sx={{ width: '100%', pl: 1.5, cursor: 'pointer', textDecoration: 'none' }} component={Link} to="/">
             <Logo />
           </Box>
-
           <Box>
             <IconButton
               onClick={() => {
@@ -252,12 +230,8 @@ export function AdminSideBar({
             >
               <ChevronLeft />
             </IconButton>
-
           </Box>
-
         </DrawerHeaderContainer>
-
-
         {}
         <Stack
           sx={{
@@ -296,16 +270,12 @@ export function AdminSideBar({
                 >
                   {item.icon}
                 </Box>
-
                 <Typography variant="body2" fontWeight={600} noWrap>
                   {item.title}
                 </Typography>
-
               </StyledNavButton>
-
             );
           })}
-
           {}
           <StyledNavButton
             component={Link}
@@ -327,16 +297,11 @@ export function AdminSideBar({
             >
               <Home fontSize="small" />
             </Box>
-
             <Typography variant="body2" fontWeight={600} noWrap>
               返回首页
             </Typography>
-
           </StyledNavButton>
-
         </Stack>
-
-
         {}
         <Box
           sx={{
@@ -367,22 +332,15 @@ export function AdminSideBar({
             >
               {isAuthenticated ? <Logout fontSize="small" /> : <Login fontSize="small" />}
             </Box>
-
             <Typography variant="body2" fontWeight={600} noWrap>
               {isAuthenticated && user ? user.username : '登录'}
             </Typography>
-
           </StyledNavButton>
-
         </Box>
-
       </Box>
-
     );
   };
-
   const currentWidth = collapsed ? adminMiniDrawerWidth : adminDrawerWidth;
-
   return (
     <>
       {}
@@ -404,8 +362,6 @@ export function AdminSideBar({
       >
         {drawerContent(false)}
       </Drawer>
-
-
       {}
       <Drawer
         variant="persistent"
@@ -415,7 +371,6 @@ export function AdminSideBar({
           display: 'block',
           width: { xs: `${adminMobileDrawerWidth}px`, md: currentWidth },
           flexShrink: 0,
-          
           transition: (theme) =>
             theme.transitions.create('width', {
               easing: theme.transitions.easing.sharp,
@@ -450,9 +405,7 @@ export function AdminSideBar({
             drawerContent(collapsed)
           )}
         </Box>
-
       </Drawer>
-
       <LogoutConfirmDialog
         open={logoutOpen}
         onClose={() => setLogoutOpen(false)}
@@ -462,10 +415,8 @@ export function AdminSideBar({
         }}
       />
     </>
-
   );
 }
-
 export function AdminNavBar({ onMenuClick }: { onMenuClick: () => void }) {
   return (
     <Box
@@ -502,16 +453,11 @@ export function AdminNavBar({ onMenuClick }: { onMenuClick: () => void }) {
           >
             <MenuIcon />
           </IconButton>
-
           <Box sx={{ flexShrink: 1, minWidth: 0, overflow: 'hidden' }}>
             <Logo />
           </Box>
-
         </Box>
-
       </Toolbar>
-
     </Box>
-
   );
 }

@@ -18,7 +18,6 @@ import { Visibility, VisibilityOff, Lock, Person, Email, VpnKey } from '@mui/ico
 import { useAuthStore } from '@/stores/authStore';
 import { HumanCaptcha, type HumanCaptchaHandle } from '@/components/Common/HumanCaptcha';
 import { fetchCaptchaConfig, type CaptchaPayload } from '@/api/captcha';
-
 export function ForgotPassword() {
   const theme = useTheme();
   const navigate = useNavigate();
@@ -38,14 +37,10 @@ export function ForgotPassword() {
   const [forgotRequired, setForgotRequired] = useState(false);
   const [captchaPayload, setCaptchaPayload] = useState<CaptchaPayload | null>(null);
   const captchaRef = useRef<HumanCaptchaHandle>(null);
-  
   const sendCodePendingRef = useRef(false);
-
-  
   if (isAuthenticated) {
     navigate('/', { replace: true });
   }
-
   const inputRippleSx = {
     '& .MuiOutlinedInput-root': {
       position: 'relative',
@@ -71,8 +66,6 @@ export function ForgotPassword() {
       },
     },
   };
-
-  
   useEffect(() => {
     let cancelled = false;
     fetchCaptchaConfig().then((cfg) => {
@@ -84,7 +77,6 @@ export function ForgotPassword() {
       cancelled = true;
     };
   }, []);
-
   const handleSendCode = async (payload?: CaptchaPayload) => {
     setSendingCode(true);
     setError('');
@@ -100,11 +92,8 @@ export function ForgotPassword() {
       setSendingCode(false);
     }
   };
-
-  
   const requires = forgotRequired && captchaMode !== 'none';
   const showInlineCaptcha = requires;
-
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -130,7 +119,6 @@ export function ForgotPassword() {
       setLoading(false);
     }
   };
-
   return (
     <Fade in timeout={400}>
       <Box
@@ -172,32 +160,23 @@ export function ForgotPassword() {
           >
             找回密码
           </Typography>
-
           <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ mb: 4 }}>
             {step === 1 ? '请输入用户名和邮箱获取重置验证码' : '输入验证码并设置新密码'}
           </Typography>
-
-
           {error && (
             <Fade in timeout={400}>
               <Alert severity="error" sx={{ mb: 3, borderRadius: (theme) => Math.max(8, theme.shape.borderRadius - 4) }}>
                 {error}
               </Alert>
-
             </Fade>
-
           )}
-
           {success && (
             <Fade in timeout={400}>
               <Alert severity="success" sx={{ mb: 3, borderRadius: (theme) => Math.max(8, theme.shape.borderRadius - 4) }}>
                 {success}
               </Alert>
-
             </Fade>
-
           )}
-
           {showInlineCaptcha && (
             <Box sx={{ mb: 3 }}>
               <HumanCaptcha
@@ -214,9 +193,7 @@ export function ForgotPassword() {
                 }}
               />
             </Box>
-
           )}
-
           <Fade in timeout={450} key={step}>
           {step === 1 ? (
             <Box
@@ -246,7 +223,6 @@ export function ForgotPassword() {
                     <InputAdornment position="start">
                       <Person color="action" />
                     </InputAdornment>
-
                   ),
                 }}
               />
@@ -264,7 +240,6 @@ export function ForgotPassword() {
                     <InputAdornment position="start">
                       <Email color="action" />
                     </InputAdornment>
-
                   ),
                 }}
               />
@@ -291,9 +266,7 @@ export function ForgotPassword() {
               >
                 {sendingCode ? '发送中...' : '获取验证码'}
               </Button>
-
             </Box>
-
           ) : (
             <Box component="form" onSubmit={handleReset} sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
               <TextField
@@ -309,7 +282,6 @@ export function ForgotPassword() {
                     <InputAdornment position="start">
                       <VpnKey color="action" />
                     </InputAdornment>
-
                   ),
                   endAdornment: (
                     <InputAdornment position="end">
@@ -322,9 +294,7 @@ export function ForgotPassword() {
                       >
                         重发
                       </Button>
-
                     </InputAdornment>
-
                   ),
                 }}
               />
@@ -342,7 +312,6 @@ export function ForgotPassword() {
                     <InputAdornment position="start">
                       <Lock color="action" />
                     </InputAdornment>
-
                   ),
                   endAdornment: (
                     <InputAdornment position="end">
@@ -353,9 +322,7 @@ export function ForgotPassword() {
                       >
                         {showPassword ? <VisibilityOff /> : <Visibility />}
                       </IconButton>
-
                     </InputAdornment>
-
                   ),
                 }}
               />
@@ -373,7 +340,6 @@ export function ForgotPassword() {
                     <InputAdornment position="start">
                       <Lock color="action" />
                     </InputAdornment>
-
                   ),
                 }}
               />
@@ -400,13 +366,9 @@ export function ForgotPassword() {
               >
                 {loading ? '重置中...' : '重置密码'}
               </Button>
-
             </Box>
-
           )}
           </Fade>
-
-
           <Box sx={{ mt: 3, textAlign: 'center' }}>
             <Button
               component={Link}
@@ -423,14 +385,9 @@ export function ForgotPassword() {
             >
               返回登录
             </Button>
-
           </Box>
-
         </Paper>
-
       </Box>
-
     </Fade>
-
   );
 }

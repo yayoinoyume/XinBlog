@@ -344,6 +344,8 @@ export interface NavThemeConfig {
 }
 
 export interface NavConfig {
+  /** 导航栏布局：sidebar=侧边栏，top=顶部标签栏。上游新增。 */
+  layout?: 'sidebar' | 'top';
   items: NavItemConfig[];
   theme?: NavThemeConfig;
 }

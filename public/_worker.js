@@ -470,29 +470,107 @@ function makeAgentSessionId() {
 
 
 
+const WEB_SEARCH_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+function extractAnchors(html, className) {
+  const out = [];
+  const classRe = new RegExp(`(?:^|\\s)${className}(?:\\s|$)`);
+  const re = /<a\s([^>]*)>([\s\S]*?)<\/a>/g;
+  for (const m of String(html || '').matchAll(re)) {
+    const attrs = m[1];
+    const cls = attrs.match(/class="([^"]*)"/);
+    if (!cls || !classRe.test(cls[1])) continue;
+    const href = attrs.match(/href="([^"]*)"/);
+    if (!href) continue;
+    out.push({ href: href[1], inner: m[2] });
+  }
+  return out;
+}
+function parseDdgHtml(html, maxResults) {
+  const anchors = extractAnchors(html, 'result__a');
+  const snippets = extractAnchors(html, 'result__snippet');
+  const results = [];
+  for (let i = 0; i < anchors.length && results.length < maxResults; i++) {
+    const realUrl = resolveDdgUrl(anchors[i].href);
+    if (!realUrl) continue;
+    results.push({
+      kind: 'result',
+      title: stripHtmlTags(anchors[i].inner) || realUrl,
+      url: realUrl,
+      snippet: stripHtmlTags(snippets[i] ? snippets[i].inner : ''),
+    });
+  }
+  return results;
+}
+function parseDdgLite(html, maxResults) {
+  const s = String(html || '');
+  const links = extractAnchors(s, 'result-link');
+  const snippets = [...s.matchAll(/class="result-snippet"[^>]*>([\s\S]*?)<\/td>/g)].map((m) => m[1]);
+  const results = [];
+  for (let i = 0; i < links.length && results.length < maxResults; i++) {
+    const realUrl = resolveDdgUrl(links[i].href);
+    if (!realUrl) continue;
+    results.push({
+      kind: 'result',
+      title: stripHtmlTags(links[i].inner) || realUrl,
+      url: realUrl,
+      snippet: stripHtmlTags(snippets[i] || ''),
+    });
+  }
+  return results;
+}
+function pickXmlTag(block, tag) {
+  const m = String(block || '').match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`));
+  if (!m) return '';
+  let v = m[1].trim();
+  const cdata = v.match(/^<!\[CDATA\[([\s\S]*?)\]\]>$/);
+  if (cdata) v = cdata[1];
+  return v.trim();
+}
+function parseBingRss(xml, maxResults) {
+  const results = [];
+  for (const it of String(xml || '').matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+    if (results.length >= maxResults) break;
+    const url = stripHtmlTags(pickXmlTag(it[1], 'link'));
+    if (!/^https?:\/\//i.test(url)) continue;
+    results.push({
+      kind: 'result',
+      title: stripHtmlTags(pickXmlTag(it[1], 'title')) || url,
+      url,
+      snippet: stripHtmlTags(pickXmlTag(it[1], 'description')),
+    });
+  }
+  return results;
+}
 async function agentWebSearch(query, maxResults = 5) {
   const q = String(query || '').trim();
   if (!q) return { ok: false, error: '缺少搜索关键词' };
-  const results = [];
-  try {
-    
-    const url = 'https://api.duckduckgo.com/?q=' + encodeURIComponent(q) + '&format=json&no_html=1';
-    const res = await fetch(url, { headers: { 'User-Agent': 'XinBlog-Agent/1.0' } });
-    if (res.ok) {
-      const data = await res.json();
-      const abstract = data && data.AbstractText;
-      if (abstract) results.push({ kind: 'abstract', title: '摘要', url: data.AbstractURL || '', snippet: abstract });
-      const related = (data && Array.isArray(data.RelatedTopics) ? data.RelatedTopics : [])
-        .filter((t) => t && t.Text)
-        .slice(0, maxResults)
-        .map((t) => ({ kind: 'related', title: t.Text, url: t.FirstURL || '', snippet: t.Text }));
-      results.push(...related);
+  const endpoints = [
+    { url: 'https://www.bing.com/search?format=rss&count=10&q=' + encodeURIComponent(q), parse: parseBingRss },
+    { url: 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(q), parse: parseDdgHtml },
+    { url: 'https://lite.duckduckgo.com/lite/?q=' + encodeURIComponent(q), parse: parseDdgLite },
+  ];
+  let lastErr = '';
+  for (const ep of endpoints) {
+    try {
+      const res = await fetch(ep.url, {
+        headers: { 'User-Agent': WEB_SEARCH_UA, Accept: 'text/html,application/xhtml+xml' },
+        redirect: 'follow',
+      });
+      if (!res.ok) {
+        lastErr = 'HTTP ' + res.status;
+        continue;
+      }
+      const results = ep.parse(await res.text(), maxResults);
+      if (results.length) return { ok: true, data: { query: q, results } };
+    } catch (e) {
+      lastErr = e && e.message;
     }
-  } catch (e) {
-    return { ok: false, error: '搜索失败：' + (e && e.message) };
   }
-  if (!results.length) return { ok: false, error: '没有找到相关结果，可尝试换关键词' };
-  return { ok: true, data: { query: q, results: results.slice(0, maxResults) } };
+  return {
+    ok: false,
+    error: '没有找到相关结果，可尝试换关键词' + (lastErr ? `（${lastErr}）` : ''),
+  };
 }
 
 function isBindingError(err) {
@@ -7240,7 +7318,11 @@ async function executeAgentSkill(name, args, ctx, active, skills) {
   
   let skill = skills[name];
   if (!skill) {
-    const byTool = Object.values(skills).find((s) => s.toolName === name);
+    const byTool = Object.values(skills).find(
+      (s) =>
+        s.toolName === name ||
+        (s.toolDef && s.toolDef.function && s.toolDef.function.name === name)
+    );
     skill = byTool;
   }
   if (!skill || typeof skill.execute !== 'function') return { ok: false, error: `未知技能：${name}` };

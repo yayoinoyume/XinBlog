@@ -5,7 +5,6 @@ import { PostDetailHeader } from './PostDetailHeader';
 import { PostDetailContent } from './PostDetailContent';
 import { PostDetailFooter } from './PostDetailFooter';
 import CommentSection from '@/components/Comment/CommentSection';
-
 interface PostDetailDefaultLayoutProps {
   post: Post;
   siblings: Post[];
@@ -14,7 +13,6 @@ interface PostDetailDefaultLayoutProps {
   /** 预览模式：跳过评论区，点赞/分享走占位实现 */
   preview?: boolean;
 }
-
 export function PostDetailDefaultLayout({
   post,
   siblings,
@@ -29,8 +27,6 @@ export function PostDetailDefaultLayout({
         <PostDetailFooter post={post} siblings={siblings} preview={preview} />
         {!preview && <CommentSection slug={post.slug} />}
       </Container>
-
     </Fade>
-
   );
 }

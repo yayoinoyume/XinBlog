@@ -7,9 +7,7 @@ import { PostDetailFooter } from './PostDetailFooter';
 import { PostDetailAuthorCard } from './PostDetailAuthorCard';
 import { PostDetailRecentPosts } from './PostDetailRecentPosts';
 import { PostDetailTOC } from './PostDetailTOC';
-
 import CommentSection from '@/components/Comment/CommentSection';
-
 interface PostDetailGlassLayoutProps {
   post: Post;
   siblings: Post[];
@@ -19,7 +17,6 @@ interface PostDetailGlassLayoutProps {
   /** 预览模式：跳过评论区，点赞/分享走占位实现 */
   preview?: boolean;
 }
-
 export function PostDetailGlassLayout({
   post,
   siblings,
@@ -35,7 +32,6 @@ export function PostDetailGlassLayout({
   const showAuthorCard = params.showAuthorCard ?? theme.showAuthorCard ?? true;
   const showRecentPosts = params.showRecentPosts ?? theme.showRecentPosts ?? true;
   const showTOC = params.showTOC ?? theme.showTOC ?? true;
-
   return (
     <Box
       sx={{
@@ -77,10 +73,7 @@ export function PostDetailGlassLayout({
           <PostDetailFooter post={post} siblings={siblings} preview={preview} />
           {!preview && <CommentSection slug={post.slug} />}
         </Box>
-
       </Box>
-
-
       {showSidebar && (
         <Box
           component="aside"
@@ -96,9 +89,7 @@ export function PostDetailGlassLayout({
           {showRecentPosts && <PostDetailRecentPosts posts={siblings} currentSlug={post.slug} />}
           {showTOC && <PostDetailTOC headings={headings} />}
         </Box>
-
       )}
     </Box>
-
   );
 }

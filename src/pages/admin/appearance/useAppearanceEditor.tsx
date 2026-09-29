@@ -5,25 +5,22 @@ import { GridView, ViewList, AutoStories } from '@mui/icons-material';
 import { themePresets } from '@/types/theme';
 import { useThemeConfigStore, getActiveColors } from '@/stores/themeConfigStore';
 import { useSiteStore } from '@/stores/siteStore';
+import { sanitizeSocialUrl } from '@/utils/socialLinks';
 import { useUIStore } from '@/stores/uiStore';
 import { fetchPosts } from '@/api/posts';
 import { uploadMedia } from '@/api/media';
 import { useSnackbar } from 'notistack';
-import type { HeroConfig, AboutConfig, Post, PaginationMode, UserFont, UserCursor, NavConfig, NavItemConfig, NavThemeConfig, ClickEffectConfig, SpacingConfig, SocialLink } from '@/types';
+import type { HeroConfig, AboutConfig, Post, PaginationMode, UserFont, UserFontFile, UserCursor, NavConfig, NavItemConfig, NavThemeConfig, ClickEffectConfig, SpacingConfig, SocialLink } from '@/types';
 import { DEFAULT_SPACING, resolveSpacingConfig } from '@/utils/spacingConfig';
 import type { PostLayoutMode } from '@/stores/uiStore';
 import { toAbsoluteCloudUrl } from '@/config';
 import { getBase64Size, compressImage } from '@/utils/image';
-import { sanitizeSocialUrl } from '@/utils/socialLinks';
-
 const MAX_HERO_IMAGE_SIZE = 500 * 1024;
 const MAX_ICON_SIZE = 100 * 1024;
 const MAX_SHARE_IMAGE_SIZE = 100 * 1024;
 const MAX_BACKGROUND_SIZE = 600 * 1024;
-
 const DEFAULT_FONT_FALLBACK =
   'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-
 const defaultNavTheme: NavThemeConfig = {
   variant: 'default',
   glassOpacity: 0.4,
@@ -35,11 +32,8 @@ const defaultNavTheme: NavThemeConfig = {
   logoText: '',
   hideOnScroll: true,
 };
-
 const toAbsoluteFontUrl = toAbsoluteCloudUrl;
-
 export type AppearanceTab = 'theme' | 'font' | 'cursor' | 'click' | 'hero' | 'about' | 'basic' | 'layout' | 'nav' | 'spacing';
-
 export const tabList: { value: AppearanceTab; label: string }[] = [
   { value: 'basic', label: '基础设置' },
   { value: 'hero', label: '主页英雄区' },
@@ -52,7 +46,6 @@ export const tabList: { value: AppearanceTab; label: string }[] = [
   { value: 'font', label: '字体' },
   { value: 'nav', label: '导航栏' },
 ];
-
 export const layouts: { id: PostLayoutMode; name: string; desc: string; icon: React.ReactNode }[] = [
   {
     id: 'grid',
@@ -73,8 +66,6 @@ export const layouts: { id: PostLayoutMode; name: string; desc: string; icon: Re
     icon: <AutoStories sx={{ fontSize: { xs: 28, md: 40 } }} />,
   },
 ];
-
-
 export function useAppearanceEditor() {
   const site = useSiteStore();
   const themeConfig = useThemeConfigStore();
@@ -83,16 +74,12 @@ export function useAppearanceEditor() {
   const isMobileAdmin = useMediaQuery(theme.breakpoints.down('lg'));
   const [tab, setTab] = useState<AppearanceTab>('basic');
   const [saving, setSaving] = useState(false);
-
-  
   const ui = useUIStore();
   const [postLayout, setPostLayout] = useState<PostLayoutMode>(
     site.config.postLayout || ui.postLayout || 'grid'
   );
   const [previewPosts, setPreviewPosts] = useState<Post[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
-
-  
   const fontCfg = site.config.font || {};
   const [userFonts, setUserFonts] = useState<UserFont[]>(fontCfg.fonts || []);
   const [activeFontId, setActiveFontId] = useState<string>(fontCfg.activeFontId || '');
@@ -108,8 +95,14 @@ export function useAppearanceEditor() {
     type: 'add' | 'remove';
     font: UserFont | null;
   }>({ open: false, type: 'add', font: null });
-
-  
+  const [customFontOpen, setCustomFontOpen] = useState(false);
+  const [customFontDraft, setCustomFontDraft] = useState<{
+    name: string;
+    family: string;
+    url: string;
+    preview: string;
+    format: UserFontFile['format'];
+  }>({ name: '', family: '', url: '', preview: '', format: 'woff2' });
   const cursorCfg = site.config.cursor || {};
   const [userCursors, setUserCursors] = useState<UserCursor[]>(cursorCfg.cursors || []);
   const [activeCursorId, setActiveCursorId] = useState<string>(cursorCfg.activeCursorId || '');
@@ -125,8 +118,6 @@ export function useAppearanceEditor() {
     type: 'add' | 'remove';
     cursor: UserCursor | null;
   }>({ open: false, type: 'add', cursor: null });
-
-  
   const clickEffectCfg = (site.config.clickEffect || {}) as Partial<ClickEffectConfig>;
   const [clickEffectEnabled, setClickEffectEnabled] = useState<boolean>(clickEffectCfg.enabled ?? false);
   const [clickEffectType, setClickEffectType] = useState<ClickEffectConfig['type']>(clickEffectCfg.type || 'heart');
@@ -140,27 +131,23 @@ export function useAppearanceEditor() {
   const [clickEffectIntensity, setClickEffectIntensity] = useState<ClickEffectConfig['intensity']>(
     clickEffectCfg.intensity || 'medium'
   );
-
   useEffect(() => {
     const layout = site.config.postLayout || ui.postLayout;
     if (layout && ['grid', 'list', 'magazine'].includes(layout)) {
       setPostLayout(layout);
     }
   }, [site.config.postLayout, ui.postLayout]);
-
   useEffect(() => {
     const cfg = site.config.font || {};
     setUserFonts(cfg.fonts || []);
     setActiveFontId(cfg.activeFontId || '');
   }, [site.config.font]);
-
   useEffect(() => {
     const cfg = site.config.cursor || {};
     setUserCursors(cfg.cursors || []);
     setActiveCursorId(cfg.activeCursorId || '');
     setCursorSize(cfg.size || 32);
   }, [site.config.cursor]);
-
   useEffect(() => {
     const cfg = (site.config.clickEffect || {}) as Partial<ClickEffectConfig>;
     setClickEffectEnabled(cfg.enabled ?? false);
@@ -170,7 +157,6 @@ export function useAppearanceEditor() {
     setClickEffectTextList((cfg.textList || []).join('\n'));
     setClickEffectIntensity(cfg.intensity || 'medium');
   }, [site.config.clickEffect]);
-
   useEffect(() => {
     if (!activeCursor) {
       setPreviewCursorUrl('');
@@ -200,7 +186,6 @@ export function useAppearanceEditor() {
       cancelled = true;
     };
   }, [activeCursor, cursorSize]);
-
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const active = userFonts.find((f) => f.id === activeFontId);
@@ -224,11 +209,10 @@ export function useAppearanceEditor() {
       if (el) el.textContent = '';
     };
   }, [userFonts, activeFontId]);
-
   useEffect(() => {
     let mounted = true;
     setPreviewLoading(true);
-    fetchPosts({ fields: 'lite' }).then((data) => {
+    fetchPosts().then((data) => {
       if (!mounted) return;
       setPreviewPosts(data.slice(0, 6));
       setPreviewLoading(false);
@@ -237,17 +221,11 @@ export function useAppearanceEditor() {
       mounted = false;
     };
   }, []);
-
-  
   const [presetId, setPresetId] = useState(themeConfig.presetId);
   const [useCustom, setUseCustom] = useState(themeConfig.useCustomColors);
   const [colors, setColors] = useState(themeConfig.customColors);
   const [borderRadius, setBorderRadius] = useState(themeConfig.borderRadius);
-
-  
   const [spacing, setSpacing] = useState<SpacingConfig>(() => resolveSpacingConfig(site.config.spacing));
-
-  
   const [siteName, setSiteName] = useState(site.config.siteName || 'StarBlog');
   const [author, setAuthor] = useState(site.config.author);
   const [shareDescription, setShareDescription] = useState(site.config.shareDescription || '');
@@ -261,18 +239,15 @@ export function useAppearanceEditor() {
   const [paginationMode, setPaginationMode] = useState<PaginationMode>(site.config.paginationMode || 'load-more');
   const [pageSize, setPageSize] = useState(site.config.pageSize ?? 9);
   const [pwaThemeColor, setPwaThemeColor] = useState(site.config.pwaThemeColor || '#ffffff');
-
-  
   const hero = site.config.hero || {};
   const [heroTitle, setHeroTitle] = useState(hero.title ?? '');
   const [heroSubtitle, setHeroSubtitle] = useState(hero.subtitle ?? '');
   const [heroBadge, setHeroBadge] = useState(hero.badge ?? '');
   const [heroBgImage, setHeroBgImage] = useState(hero.backgroundImage ?? '');
   const [heroBgColor, setHeroBgColor] = useState(hero.backgroundColor ?? '');
-
-  
   const nav = site.config.nav || { items: [] };
   const navTheme = nav.theme || defaultNavTheme;
+  const [navLayout, setNavLayout] = useState<NavConfig['layout']>(nav.layout ?? 'sidebar');
   const [navItems, setNavItems] = useState<NavItemConfig[]>(nav.items || []);
   const [navVariant, setNavVariant] = useState<NavThemeConfig['variant']>(navTheme.variant);
   const [navGlassOpacity, setNavGlassOpacity] = useState(navTheme.glassOpacity ?? 0.4);
@@ -283,14 +258,11 @@ export function useAppearanceEditor() {
   const [navActiveColor, setNavActiveColor] = useState(navTheme.activeColor ?? '');
   const [navLogoText, setNavLogoText] = useState(navTheme.logoText ?? '');
   const [navHideOnScroll, setNavHideOnScroll] = useState(navTheme.hideOnScroll ?? true);
-
-  
   const about = site.config.about || {};
   const [aboutSubtitle, setAboutSubtitle] = useState(about.subtitle ?? '');
   const [aboutBio, setAboutBio] = useState(about.bio ?? '');
   const [aboutTags, setAboutTags] = useState((about.tags ?? []).join('、'));
   const [aboutSocials, setAboutSocials] = useState<SocialLink[]>((about.socials ?? []).map((s) => ({ ...s })));
-
   useEffect(() => {
     const c = site.config;
     setSiteName(c.siteName || 'StarBlog');
@@ -337,27 +309,23 @@ export function useAppearanceEditor() {
       setBorderRadius(themeCfg.borderRadius ?? themeConfig.borderRadius);
     }
     setSpacing(resolveSpacingConfig(c.spacing));
-    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [site.config]);
-
   const activeColors = getActiveColors({
     ...themeConfig,
     presetId,
     useCustomColors: useCustom,
     customColors: colors,
   });
-
   const isDirty = useMemo(() => {
     const currentHero = site.config.hero || {};
     const currentAbout = site.config.about || {};
     const currentTags = (currentAbout.tags ?? []).join('、');
     const currentLayout = site.config.postLayout || ui.postLayout || 'grid';
-
     if (presetId !== themeConfig.presetId) return true;
     if (useCustom !== themeConfig.useCustomColors) return true;
     if (borderRadius !== themeConfig.borderRadius) return true;
     if (JSON.stringify(colors) !== JSON.stringify(themeConfig.customColors)) return true;
-
     if (siteName !== (site.config.siteName || 'StarBlog')) return true;
     if (author !== site.config.author) return true;
     if (shareDescription !== (site.config.shareDescription || '')) return true;
@@ -371,19 +339,17 @@ export function useAppearanceEditor() {
     if (paginationMode !== (site.config.paginationMode || 'load-more')) return true;
     if (pageSize !== (site.config.pageSize ?? 9)) return true;
     if (pwaThemeColor !== (site.config.pwaThemeColor || '#ffffff')) return true;
-
     if (heroTitle !== (currentHero.title ?? '')) return true;
     if (heroSubtitle !== (currentHero.subtitle ?? '')) return true;
     if (heroBadge !== (currentHero.badge ?? '')) return true;
     if (heroBgImage !== (currentHero.backgroundImage ?? '')) return true;
     if (heroBgColor !== (currentHero.backgroundColor ?? '')) return true;
-
     if (aboutSubtitle !== (currentAbout.subtitle ?? '')) return true;
     if (aboutBio !== (currentAbout.bio ?? '')) return true;
     if (aboutTags !== currentTags) return true;
-    if (JSON.stringify(aboutSocials) !== JSON.stringify(currentAbout.socials ?? [])) return true;
-
     const currentNav = site.config.nav || { items: [] };
+    if (JSON.stringify(aboutSocials) !== JSON.stringify(currentAbout.socials ?? [])) return true;
+    if ((navLayout ?? 'sidebar') !== (currentNav.layout ?? 'sidebar')) return true;
     if (JSON.stringify(navItems) !== JSON.stringify(currentNav.items || [])) return true;
     const currentNavTheme = currentNav.theme || defaultNavTheme;
     if (navVariant !== currentNavTheme.variant) return true;
@@ -395,9 +361,7 @@ export function useAppearanceEditor() {
     if (navActiveColor !== (currentNavTheme.activeColor ?? '')) return true;
     if (navLogoText !== (currentNavTheme.logoText ?? '')) return true;
     if (navHideOnScroll !== (currentNavTheme.hideOnScroll ?? true)) return true;
-
     if (postLayout !== currentLayout) return true;
-
     const currentFont = site.config.font || {};
     if (
       JSON.stringify(activeFontId) !== JSON.stringify(currentFont.activeFontId || '') ||
@@ -405,7 +369,6 @@ export function useAppearanceEditor() {
     ) {
       return true;
     }
-
     const currentCursor = site.config.cursor || {};
     if (
       JSON.stringify(activeCursorId) !== JSON.stringify(currentCursor.activeCursorId || '') ||
@@ -414,7 +377,6 @@ export function useAppearanceEditor() {
     ) {
       return true;
     }
-
     const currentClickEffect = (site.config.clickEffect || {}) as Partial<ClickEffectConfig>;
     const currentTextList = (currentClickEffect.textList || []).join('\n');
     if (clickEffectEnabled !== (currentClickEffect.enabled ?? false)) return true;
@@ -423,9 +385,7 @@ export function useAppearanceEditor() {
     if (clickEffectCustomColor !== (currentClickEffect.customColor || '')) return true;
     if (clickEffectTextList !== currentTextList) return true;
     if (clickEffectIntensity !== (currentClickEffect.intensity || 'medium')) return true;
-
     if (JSON.stringify(spacing) !== JSON.stringify(resolveSpacingConfig(site.config.spacing))) return true;
-
     return false;
   }, [
     presetId,
@@ -451,6 +411,7 @@ export function useAppearanceEditor() {
     aboutSubtitle,
     aboutBio,
     aboutTags,
+    navLayout,
     aboutSocials,
     navItems,
     navVariant,
@@ -504,7 +465,6 @@ export function useAppearanceEditor() {
     spacing,
     site.config.spacing,
   ]);
-
   const resetToPreset = (id: string) => {
     const preset = themePresets.find((p) => p.id === id);
     if (preset) {
@@ -513,12 +473,10 @@ export function useAppearanceEditor() {
       setColors({ ...preset.colors });
     }
   };
-
   const handleColorChange = (key: keyof import('@/types/theme').ThemeColorConfig, value: string) => {
     setColors((prev) => ({ ...prev, [key]: value }));
     setUseCustom(true);
   };
-
   const handleImageUpload = async (
     file: File,
     targetSize: number,
@@ -539,8 +497,6 @@ export function useAppearanceEditor() {
       enqueueSnackbar(msg, { variant: 'error' });
     }
   };
-
-  
   const updateSpacing = (key: keyof SpacingConfig, side: 'mobile' | 'desktop', value: number) => {
     setSpacing((prev) => {
       const base = prev ?? resolveSpacingConfig(site.config.spacing);
@@ -552,14 +508,11 @@ export function useAppearanceEditor() {
       return next;
     });
   };
-
   const resetSpacing = () => {
     setSpacing(JSON.parse(JSON.stringify(DEFAULT_SPACING)) as SpacingConfig);
   };
-
   const applyAll = async () => {
     setSaving(true);
-
     const heroConfig: HeroConfig = {
       title: heroTitle,
       subtitle: heroSubtitle,
@@ -567,7 +520,6 @@ export function useAppearanceEditor() {
       backgroundImage: heroBgImage,
       backgroundColor: heroBgColor,
     };
-
     const aboutConfig: AboutConfig = {
       subtitle: aboutSubtitle,
       bio: aboutBio,
@@ -584,8 +536,8 @@ export function useAppearanceEditor() {
         }))
         .filter((s) => s.label && s.url),
     };
-
     const navConfig: NavConfig = {
+      layout: navLayout,
       items: navItems,
       theme: {
         variant: navVariant,
@@ -599,7 +551,6 @@ export function useAppearanceEditor() {
         hideOnScroll: navHideOnScroll,
       },
     };
-
     const siteConfig = {
       siteName,
       author,
@@ -647,9 +598,7 @@ export function useAppearanceEditor() {
         intensity: clickEffectIntensity,
       },
     };
-
     const siteOk = await site.saveConfig(siteConfig);
-
     if (siteOk) {
       useSiteStore.setState((state) => ({
         config: { ...state.config, ...siteConfig },
@@ -661,7 +610,6 @@ export function useAppearanceEditor() {
         borderRadius,
       });
       ui.setPostLayout(postLayout);
-
       const sc = useSiteStore.getState().config;
       const tc = useThemeConfigStore.getState();
       setSiteName(sc.siteName || 'StarBlog');
@@ -722,17 +670,13 @@ export function useAppearanceEditor() {
       setClickEffectTextList((savedClickEffect.textList || []).join('\n'));
       setClickEffectIntensity(savedClickEffect.intensity || 'medium');
     }
-
     setSaving(false);
-
     if (siteOk) {
       enqueueSnackbar('外观设置已保存', { variant: 'success' });
     } else {
       enqueueSnackbar('保存失败，请稍后再试', { variant: 'error' });
     }
   };
-
-  
   const activeFont = userFonts.find((f) => f.id === activeFontId);
   const handleOpenFontStore = (forceRefresh = false) => {
     setFontStoreOpen(true);
@@ -763,7 +707,6 @@ export function useAppearanceEditor() {
       })
       .finally(() => setStoreLoading(false));
   };
-
   const saveFontConfig = async (
     nextFonts: UserFont[],
     nextActiveFontId: string,
@@ -785,24 +728,20 @@ export function useAppearanceEditor() {
     }
     return ok;
   };
-
   const handleAddFont = (font: UserFont) => {
     if (userFonts.some((f) => f.id === font.id) || fontActionLoading) return;
     setConfirmDialog({ open: true, type: 'add', font });
   };
-
   const handleRemoveFont = (id: string) => {
     if (fontActionLoading) return;
     const font = userFonts.find((f) => f.id === id);
     if (!font) return;
     setConfirmDialog({ open: true, type: 'remove', font });
   };
-
   const handleConfirmFontAction = async () => {
     const { type, font } = confirmDialog;
     if (!font) return;
     setConfirmDialog((prev) => ({ ...prev, open: false }));
-
     if (type === 'add') {
       const nextFonts = [...userFonts, font];
       const nextActiveFontId = activeFontId || font.id;
@@ -817,18 +756,35 @@ export function useAppearanceEditor() {
       await saveFontConfig(nextFonts, nextActiveFontId, '字体已移除');
     }
   };
-
   const handleResetSystemFont = () => {
     if (!activeFontId || fontActionLoading) return;
     setActiveFontId('');
   };
-
   const handleActivateFont = (id: string) => {
     if (activeFontId === id || fontActionLoading) return;
     setActiveFontId(id);
   };
-
-  
+  const handleOpenCustomFontDialog = () => {
+    setCustomFontDraft({ name: '', family: '', url: '', preview: '', format: 'woff2' });
+    setCustomFontOpen(true);
+  };
+  const handleSaveCustomFont = () => {
+    const name = customFontDraft.name.trim();
+    const fileUrl = customFontDraft.url.trim();
+    if (!name || !fileUrl) {
+      enqueueSnackbar('请填写字体名称与字体文件地址', { variant: 'error' });
+      return;
+    }
+    const font: UserFont = {
+      id: `custom-${Date.now()}`,
+      name,
+      family: customFontDraft.family.trim() || name,
+      preview: customFontDraft.preview.trim(),
+      files: [{ url: fileUrl, format: customFontDraft.format }],
+    };
+    setCustomFontOpen(false);
+    handleAddFont(font);
+  };
   const handleOpenCursorStore = (forceRefresh = false) => {
     setCursorStoreOpen(true);
     if (storeCursors.length > 0 && !forceRefresh) {
@@ -858,7 +814,6 @@ export function useAppearanceEditor() {
       })
       .finally(() => setCursorStoreLoading(false));
   };
-
   const saveCursorConfig = async (
     nextCursors: UserCursor[],
     nextActiveCursorId: string,
@@ -880,24 +835,20 @@ export function useAppearanceEditor() {
     }
     return ok;
   };
-
   const handleAddCursor = (cursor: UserCursor) => {
     if (userCursors.some((c) => c.id === cursor.id) || cursorActionLoading) return;
     setCursorConfirmDialog({ open: true, type: 'add', cursor });
   };
-
   const handleRemoveCursor = (id: string) => {
     if (cursorActionLoading) return;
     const cursor = userCursors.find((c) => c.id === id);
     if (!cursor) return;
     setCursorConfirmDialog({ open: true, type: 'remove', cursor });
   };
-
   const handleConfirmCursorAction = async () => {
     const { type, cursor } = cursorConfirmDialog;
     if (!cursor) return;
     setCursorConfirmDialog((prev) => ({ ...prev, open: false }));
-
     if (type === 'add') {
       const nextCursors = [...userCursors, cursor];
       const nextActiveCursorId = activeCursorId || cursor.id;
@@ -912,36 +863,29 @@ export function useAppearanceEditor() {
       await saveCursorConfig(nextCursors, nextActiveCursorId, '鼠标已移除');
     }
   };
-
   const handleResetSystemCursor = () => {
     if (!activeCursorId || cursorActionLoading) return;
     setActiveCursorId('');
   };
-
   const handleActivateCursor = (id: string) => {
     if (activeCursorId === id || cursorActionLoading) return;
     setActiveCursorId(id);
   };
-
   return {
-    
     site,
     themeConfig,
     ui,
     theme,
     isMobileAdmin,
     enqueueSnackbar,
-    
     tab,
     setTab,
     saving,
     setSaving,
-    
     postLayout,
     setPostLayout,
     previewPosts,
     previewLoading,
-    
     userFonts,
     setUserFonts,
     activeFontId,
@@ -962,7 +906,12 @@ export function useAppearanceEditor() {
     handleConfirmFontAction,
     handleResetSystemFont,
     handleActivateFont,
-    
+    customFontOpen,
+    setCustomFontOpen,
+    customFontDraft,
+    setCustomFontDraft,
+    handleOpenCustomFontDialog,
+    handleSaveCustomFont,
     userCursors,
     setUserCursors,
     activeCursorId,
@@ -984,7 +933,6 @@ export function useAppearanceEditor() {
     handleConfirmCursorAction,
     handleResetSystemCursor,
     handleActivateCursor,
-    
     clickEffectEnabled,
     setClickEffectEnabled,
     clickEffectType,
@@ -997,7 +945,6 @@ export function useAppearanceEditor() {
     setClickEffectTextList,
     clickEffectIntensity,
     setClickEffectIntensity,
-    
     presetId,
     setPresetId,
     useCustom,
@@ -1009,7 +956,6 @@ export function useAppearanceEditor() {
     activeColors,
     resetToPreset,
     handleColorChange,
-    
     siteName,
     setSiteName,
     author,
@@ -1036,12 +982,10 @@ export function useAppearanceEditor() {
     setPageSize,
     pwaThemeColor,
     setPwaThemeColor,
-    
     spacing,
     updateSpacing,
     resetSpacing,
     DEFAULT_SPACING,
-    
     heroTitle,
     setHeroTitle,
     heroSubtitle,
@@ -1052,9 +996,12 @@ export function useAppearanceEditor() {
     setHeroBgImage,
     heroBgColor,
     setHeroBgColor,
-    
+    navLayout,
+    setNavLayout,
     navItems,
     setNavItems,
+    aboutSocials,
+    setAboutSocials,
     navVariant,
     setNavVariant,
     navGlassOpacity,
@@ -1074,20 +1021,15 @@ export function useAppearanceEditor() {
     navHideOnScroll,
     setNavHideOnScroll,
     defaultNavTheme,
-    
     aboutSubtitle,
     setAboutSubtitle,
     aboutBio,
     setAboutBio,
     aboutTags,
     setAboutTags,
-    aboutSocials,
-    setAboutSocials,
-    
     isDirty,
     handleImageUpload,
     applyAll,
-    
     MAX_HERO_IMAGE_SIZE,
     MAX_ICON_SIZE,
     MAX_SHARE_IMAGE_SIZE,
@@ -1095,5 +1037,4 @@ export function useAppearanceEditor() {
     DEFAULT_FONT_FALLBACK,
   };
 }
-
 export type AppearanceEditor = ReturnType<typeof useAppearanceEditor>;
