@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>404 页面未找到 · XinBlog</title>
+  <meta name="robots" content="noindex">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f7ff;
+      --fg: #1a1d2e;
+      --fg-sub: #5d6273;
+      /* 品牌色取 teal-700 → cyan-700（原 teal-500/cyan-500）。原配色白字按钮仅 2.49:1 /
+         2.43:1、大字「404」渐变 on #f5f7ff 仅 2.33:1，均不达标；加深后为 5.47:1 / 5.36:1
+         与 5.01:1，渐变方向与观感不变。 */
+      --brand: linear-gradient(135deg, #0f766e 0%, #0e7490 100%);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f111a;
+        --fg: #e8eaf6;
+        --fg-sub: #9fa3b5;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", sans-serif;
+      text-align: center;
+    }
+    .wrap { max-width: 560px; }
+    .code {
+      font-size: clamp(72px, 18vw, 140px);
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: 2px;
+      background: var(--brand);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      -webkit-text-fill-color: transparent;
+      margin: 0 0 12px;
+    }
+    h1 { font-size: clamp(20px, 4.4vw, 28px); font-weight: 700; margin: 0 0 12px; }
+    p { color: var(--fg-sub); font-size: 16px; line-height: 1.7; margin: 0 0 28px; }
+    a.home {
+      display: inline-block;
+      padding: 12px 32px;
+      border-radius: 8px;
+      background: var(--brand);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: opacity .2s ease, transform .2s ease;
+    }
+    a.home:hover { opacity: .9; transform: translateY(-1px); }
+    /* 焦点环跟随品牌色末端 cyan-700：原硬编码 #06b6d4 在亮色底仅 2.27:1，达不到 WCAG
+       1.4.11 非文字组件所需的 3:1。 */
+    a.home:focus-visible { outline: 2px solid #0e7490; outline-offset: 3px; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <p class="code">404</p>
+    <h1>页面未找到</h1>
+    <p>你访问的页面不存在，也许它去了远方。<br>可以返回首页继续浏览，或检查一下链接地址是否正确。</p>
+    <a class="home" href="/">返回首页</a>
+  </main>
+</body>
+</html>

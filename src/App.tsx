@@ -12,6 +12,7 @@ import { ClickEffect } from '@/components/ClickEffect';
 import { GlobalMusicPlayer } from '@/components/MusicPlayer/GlobalMusicPlayer';
 import { MusicPlayerProvider } from '@/components/MusicPlayer/MusicPlayerContext';
 import { DISABLE_CONTEXT_MENU } from '@/config';
+import { decodeJwtPayload } from '@/utils/token';
 
 function GlobalScrollbarStyles() {
   return (
@@ -90,27 +91,54 @@ function App() {
   
   useEffect(() => {
     let timer: number | undefined;
+    let cancelled = false;
+    // 降级刷新最多只做一次：若换来的新 token 仍解析不出 exp，就不再递归刷新
+    let fellBackOnce = false;
 
     const scheduleRefresh = () => {
+      if (cancelled) return;
       window.clearTimeout(timer);
       const { isAuthenticated, token, refresh } = useAuthStore.getState();
       if (!isAuthenticated || !token) return;
 
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        if (!payload.exp) return;
+      // payload 用 base64url（含 - / _），裸 atob 会抛 InvalidCharacterError；统一交给
+      // decodeJwtPayload，失败返回 null 而不抛。
+      const payload = decodeJwtPayload(token);
+      const exp = payload?.exp;
 
-        const expiresAt = payload.exp * 1000;
-        const refreshAt = expiresAt - 5 * 60 * 1000; 
-        const delay = refreshAt - Date.now();
+      if (typeof exp !== 'number') {
+        // 降级路径：读不到 exp 就排不了程，旧代码的空 catch 会让 access token 48h 后
+        // 真的过期且无人续期。退化为立即 refresh() 一次，用新 token 的 exp 重新排程。
+        console.warn(
+          '[auth] 解析 token 失败，自动续期未排程 → 退化为立即刷新',
+          payload === null ? 'payload 解析失败' : 'payload 缺少 exp 声明'
+        );
+        if (fellBackOnce) return; // 刷新后仍解析不出 exp：不再刷新，避免死循环，交由 401 流程兜底
+        fellBackOnce = true;
+        void refresh().then((ok) => {
+          if (ok && !cancelled) scheduleRefresh();
+        });
+        return;
+      }
+      fellBackOnce = false;
 
-        if (delay <= 0) {
-          refresh();
-        } else {
-          timer = window.setTimeout(() => refresh(), delay);
-        }
-      } catch {
-        
+      const expiresAt = exp * 1000;
+      const refreshAt = expiresAt - 5 * 60 * 1000;
+      const delay = refreshAt - Date.now();
+
+      // 触发续期后必须用新 token 的 exp 重排，否则定时器只响一次，之后只能等 401 兜底。
+      // 仅在 refresh() 返回 true（确实换到新 token）时才重排：失败也重排会读到旧 token、
+      // delay 仍为负，立刻再次触发 refresh，形成无限刷新循环打服务端。
+      if (delay <= 0) {
+        void refresh().then((ok) => {
+          if (ok && !cancelled) scheduleRefresh();
+        });
+      } else {
+        timer = window.setTimeout(() => {
+          void refresh().then((ok) => {
+            if (ok && !cancelled) scheduleRefresh();
+          });
+        }, delay);
       }
     };
 
@@ -125,6 +153,7 @@ function App() {
     });
 
     return () => {
+      cancelled = true;
       window.clearTimeout(timer);
       unsubscribe();
     };

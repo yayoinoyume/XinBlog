@@ -30,6 +30,9 @@ const SERVER_VERSION = '1.0.0';
 
 /* ---------------- HTTP 客户端 ---------------- */
 
+/** 单次请求超时上限：博客侧无响应或网络黑洞时主动中断，避免 Agent 宿主一直挂起 */
+const REQUEST_TIMEOUT_MS = 30_000;
+
 async function api(method, path, body) {
   if (!API_KEY) {
     throw new Error('XINBLOG_API_KEY 未配置：请在启动环境变量中提供博客标准管理接口密钥');
@@ -43,8 +46,13 @@ async function api(method, path, body) {
         'X-API-Key': API_KEY,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (e) {
+    // AbortSignal.timeout 触发时明确报「超时」，与「连不上」区分，便于 Agent 判断该重试还是排查配置
+    if (e && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+      throw new Error(`请求博客站点 ${SITE_URL} 超时（${REQUEST_TIMEOUT_MS / 1000} 秒无响应）：${e.message || 'AbortSignal.timeout'}`);
+    }
     throw new Error(`无法连接博客站点 ${SITE_URL}：${e.message}`);
   }
   let json = null;

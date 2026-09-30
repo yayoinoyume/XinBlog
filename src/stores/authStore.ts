@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { apiPost } from '@/api/client';
 import type { CaptchaPayload } from '@/api/captcha';
+import { decodeJwtPayload } from '@/utils/token';
 export type UserRole = 'guest' | 'admin' | 'super_admin';
 export interface AuthUser {
   id: string;
@@ -19,7 +20,6 @@ interface AuthResult {
   ok: boolean;
   msg?: string;
   needCode?: boolean;
-  debug?: Record<string, unknown>;
 }
 interface AuthState {
   isAuthenticated: boolean;
@@ -81,11 +81,11 @@ export const useAuthStore = create<AuthState>()(
           email,
           ...(captcha || {}),
         });
-        const debug = (res as { data?: { _debug?: Record<string, unknown> } }).data?._debug;
+        // 不再回传服务端调试字段：验证码接口内部细节（含服务商报错）不应流向浏览器
         if (res.code !== 0) {
-          return { ok: false, msg: res.msg || (res.code >= 500 ? '服务器内部错误' : '发送失败'), debug };
+          return { ok: false, msg: res.msg || (res.code >= 500 ? '服务器内部错误' : '发送失败') };
         }
-        return { ok: true, msg: res.msg || '验证码已发送', debug };
+        return { ok: true, msg: res.msg || '验证码已发送' };
       },
       resetPassword: async (username: string, email: string, code: string, password: string) => {
         const res = await apiPost('/api/v1/auth/reset-password', { username, email, code, password });
@@ -97,26 +97,21 @@ export const useAuthStore = create<AuthState>()(
       logout: () => {
         const token = get().refreshToken;
         if (token) {
-          apiPost('/api/v1/auth/logout', { refreshToken: token }).catch(() => {});
+          // _retry: true —— 登出的 401 不再触发刷新重试，否则「刷新失败 → logout」
+          // 产出的 401 会再发一次刷新，互相触发冗余往返，甚至把新 token 写回已清空的会话
+          apiPost('/api/v1/auth/logout', { refreshToken: token }, { _retry: true }).catch(() => {});
         }
         set({ isAuthenticated: false, user: null, token: null, refreshToken: null });
         localStorage.removeItem(AUTH_SYNC_KEY);
-        localStorage.removeItem('theme-config');
-        localStorage.removeItem('ui-preferences');
+        // 主题配置与 UI 偏好属设备级偏好、非会话级数据，登出时保留
       },
       checkAuth: () => {
         const { isAuthenticated, token } = get();
         if (!isAuthenticated || !token) return false;
-        try {
-          const payload = JSON.parse(atob(token.split('.')[1]));
-          if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
-            return false;
-          }
-          return true;
-        } catch {
-          get().logout();
-          return false;
-        }
+        const payload = decodeJwtPayload(token);
+        // 解析失败 ≠ token 非法（只是读不到 exp），此时不能 logout()，交由服务端 401 → 刷新流程判定
+        if (typeof payload?.exp !== 'number') return true;
+        return payload.exp >= Math.floor(Date.now() / 1000);
       },
       refresh: async () => {
         const { refreshToken } = get();

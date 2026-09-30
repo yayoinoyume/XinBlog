@@ -32,6 +32,7 @@ import type { FriendLink, FriendsConfig, FriendApplication } from '@/types';
 import { LazyImage } from '@/components/Common/LazyImage';
 import { useSnackbar } from 'notistack';
 import { compressImage, getBase64Size } from '@/utils/image';
+import { isValidFriendUrl } from '@/utils/url';
 const APPLY_MAX_AVATAR_SIZE = 30 * 1024;
 function ApplyFriendDialog({ open, needsAudit, onClose, onSubmitted }: {
   open: boolean;
@@ -48,6 +49,7 @@ function ApplyFriendDialog({ open, needsAudit, onClose, onSubmitted }: {
   const [avatar, setAvatar] = useState('');
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [urlError, setUrlError] = useState('');
   useEffect(() => {
     if (open) {
       setName('');
@@ -55,6 +57,7 @@ function ApplyFriendDialog({ open, needsAudit, onClose, onSubmitted }: {
       setDescription('');
       setEmail(user?.email || '');
       setAvatar('');
+      setUrlError('');
     }
   }, [open, user]);
   const handleAvatarUpload = async (file: File | undefined) => {
@@ -77,9 +80,20 @@ function ApplyFriendDialog({ open, needsAudit, onClose, onSubmitted }: {
   };
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmedUrl = url.trim();
+    // 提交前做协议/格式校验：javascript:、data:、纯文本、相对路径一律就地提示并阻止提交
+    if (!trimmedUrl) {
+      setUrlError('站点链接必填');
+      return;
+    }
+    if (!isValidFriendUrl(trimmedUrl)) {
+      setUrlError('请输入以 http:// 或 https:// 开头的完整地址');
+      return;
+    }
+    setUrlError('');
     setSubmitting(true);
     try {
-      await applyFriend({ name: name.trim(), url: url.trim(), description: description.trim(), email: email.trim(), avatar: avatar.trim() });
+      await applyFriend({ name: name.trim(), url: trimmedUrl, description: description.trim(), email: email.trim(), avatar: avatar.trim() });
       setSubmitting(false);
       const msg = needsAudit ? '友链申请已提交，等待审核' : '友链申请成功';
       enqueueSnackbar(msg, { variant: 'success' });
@@ -128,10 +142,16 @@ function ApplyFriendDialog({ open, needsAudit, onClose, onSubmitted }: {
             <TextField
               label="站点链接"
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(e) => {
+                setUrl(e.target.value);
+                if (urlError) setUrlError('');
+              }}
               fullWidth
               required
+              error={Boolean(urlError)}
+              helperText={urlError || '仅支持 http/https 开头的绝对地址'}
               placeholder="https://example.com"
+              inputMode="url"
               InputProps={{ startAdornment: <LinkIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} /> }}
             />
             <TextField label="一句话介绍" value={description} onChange={(e) => setDescription(e.target.value)} fullWidth multiline rows={2} />

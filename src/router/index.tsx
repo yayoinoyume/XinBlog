@@ -7,6 +7,7 @@ import { PageLoading } from '@/components/Common/Loading';
 import { RouteErrorBoundary } from '@/components/Common/RouteErrorBoundary';
 import { useAuthStore } from '@/stores/authStore';
 import { isContentAdmin, isSuperAdmin } from '@/utils/permission';
+import { decodeJwtPayload } from '@/utils/token';
 const Home = lazy(() => import('@/pages/Home').then((m) => ({ default: m.Home })));
 const PostDetail = lazy(() => import('@/pages/PostDetail').then((m) => ({ default: m.PostDetail })));
 const TagPage = lazy(() => import('@/pages/TagPage').then((m) => ({ default: m.TagPage })));
@@ -72,21 +73,16 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
         }
         return;
       }
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        const now = Math.floor(Date.now() / 1000);
-        if (payload.exp && payload.exp > now + 60) {
-          if (!cancelled) {
-            setForbidden(false);
-            setValid(true);
-            setChecking(false);
-          }
-          return;
-        }
-      } catch {
+      // 解析失败不再直接判负：base64url 裸 atob 会抛 InvalidCharacterError，旧代码直接
+      // setValid(false) 把用户踢回登录页且不触发自愈；现在等价于「exp 不可知」，
+      // 落到下方 refresh() 由服务端校验并续期。
+      const payload = decodeJwtPayload(token);
+      const exp = payload?.exp;
+      const now = Math.floor(Date.now() / 1000);
+      if (typeof exp === 'number' && exp > now + 60) {
         if (!cancelled) {
           setForbidden(false);
-          setValid(false);
+          setValid(true);
           setChecking(false);
         }
         return;

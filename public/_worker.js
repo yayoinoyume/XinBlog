@@ -7,12 +7,54 @@ import { connect } from 'cloudflare:sockets';
 const VERSION = '1.0.0';
 const GLOBAL_DAILY_EMAIL_LIMIT = 200; 
 
+// ============================================================================
+// 安全响应头 —— 必须在应用层（Worker）补发，不能依赖 public/_headers
+//   原因（_headers 对 Pages Functions 响应不生效的完整论证）见 public/_headers 顶部注释。
+//   故意不上 CSP / HSTS 的理由同见该文件。
+//   设计约束：只新增、绝不覆盖 —— has() 判断后再 set()，调用方传入的
+//   Access-Control-Allow-Origin / Connection / Content-Length 等既有头原样保留，
+//   原始对象也不会被就地修改。
+// ============================================================================
+
+// 三条通用安全头（取值须与 public/_headers 保持一致）
+const SECURITY_HEADERS = [
+  ['X-Frame-Options', 'DENY'],
+  ['Referrer-Policy', 'strict-origin-when-cross-origin'],
+  ['Permissions-Policy', 'geolocation=(), microphone=(self), camera=(self)'],
+];
+
+/** 把三条安全头合并进 headers，返回新的 Headers（不修改传入对象）。 */
+function withSecurityHeaders(headers) {
+  const out = new Headers(headers || undefined);
+  for (const [name, value] of SECURITY_HEADERS) {
+    if (!out.has(name)) out.set(name, value);
+  }
+  return out;
+}
+
+/**
+ * 给已存在的响应补安全头：用于没有 headers 字面量的出口（assetResponse 透传、缓存命中等）。
+ * 只换壳不读 body —— 复用原 body 流并保留 status/statusText，不影响流式响应与 Cache API clone()。
+ */
+function withSecurityHeadersOnResponse(res) {
+  if (!res) return res;
+  // 101 是 WebSocket 升级响应，握手头由运行时接管，不在这里改写
+  if (res.webSocket || res.status === 101) return res;
+  // 这些状态码不允许带 body
+  const nullBody = res.status === 204 || res.status === 205 || res.status === 304;
+  return new Response(nullBody ? null : res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers: withSecurityHeaders(res.headers),
+  });
+}
+
 
 
 function jsonResponse(code, data, msg = 'ok', status = 200) {
   return new Response(JSON.stringify({ code, data, msg }), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: withSecurityHeaders({ 'Content-Type': 'application/json' }),
   });
 }
 
@@ -21,7 +63,7 @@ function jsonResponseWithCache(code, data, msg = 'ok', status = 200, cacheContro
   if (cacheControl) {
     headers['Cache-Control'] = cacheControl;
   }
-  return new Response(JSON.stringify({ code, data, msg }), { status, headers });
+  return new Response(JSON.stringify({ code, data, msg }), { status, headers: withSecurityHeaders(headers) });
 }
 
 function now() {
@@ -740,12 +782,17 @@ function isManageApiPath(request) {
 // 从请求头取 X-API-Key 并与云端密钥比对；未配置 MANAGE_API_KEY 时永远返回 false
 // （isolate 生命周期内记录已告警过的错误 key，防止未鉴权请求灌水放大日志量）
 let manageApiWarnedKey = '';
+// （isolate 生命周期内只告警一次"服务端未配置 MANAGE_API_KEY"，同样防止刷日志）
+let manageApiMissingKeyWarned = false;
 function hasValidApiKey(request, env) {
   const apiKey = request.headers.get('X-API-Key');
   const expect = env.MANAGE_API_KEY ? String(env.MANAGE_API_KEY) : '';
   if (!apiKey) return false;
   if (!expect) {
-    console.warn('标准管理接口：请求携带 X-API-Key 但服务端未配置 MANAGE_API_KEY');
+    if (!manageApiMissingKeyWarned) {
+      manageApiMissingKeyWarned = true;
+      console.warn('标准管理接口：请求携带 X-API-Key 但服务端未配置 MANAGE_API_KEY（同一 isolate 后续请求不再重复告警）');
+    }
     return false;
   }
   if (!safeEqual(apiKey, expect)) {
@@ -1017,16 +1064,16 @@ async function getManifest(env, requestUrl) {
 
     return new Response(JSON.stringify(manifest), {
       status: 200,
-      headers: {
+      headers: withSecurityHeaders({
         'Content-Type': 'application/manifest+json; charset=utf-8',
         'Cache-Control': 'public, max-age=120, stale-while-revalidate=86400',
-      },
+      }),
     });
   } catch (err) {
     console.error('生成 manifest 失败:', err);
     return new Response(JSON.stringify({ error: 'manifest generation failed' }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: withSecurityHeaders({ 'Content-Type': 'application/json' }),
     });
   }
 }
@@ -1070,10 +1117,10 @@ async function serveSitemap(env, url) {
 
   return new Response(xml, {
     status: 200,
-    headers: {
+    headers: withSecurityHeaders({
       'Content-Type': 'application/xml; charset=utf-8',
       'Cache-Control': 'public, max-age=600, stale-while-revalidate=3600',
-    },
+    }),
   });
 }
 
@@ -1083,10 +1130,10 @@ function serveRobots(url) {
   const body = ['User-agent: *', 'Allow: /', '', 'Sitemap: ' + origin + '/sitemap.xml', ''].join('\n');
   return new Response(body, {
     status: 200,
-    headers: {
+    headers: withSecurityHeaders({
       'Content-Type': 'text/plain; charset=utf-8',
       'Cache-Control': 'public, max-age=3600',
-    },
+    }),
   });
 }
 
@@ -1729,8 +1776,12 @@ async function updatePost(request, env, user) {
     params.push(String(body.title).trim());
   }
   if (body.slug !== undefined) {
-    updates.push('slug = ?');
-    params.push(String(body.slug).trim());
+    // slug 空白后为空则跳过（保留原值、不自动生成），避免静默改掉已发布文章的 URL
+    const nextSlug = String(body.slug).trim();
+    if (nextSlug) {
+      updates.push('slug = ?');
+      params.push(nextSlug);
+    }
   }
   if (body.excerpt !== undefined) {
     updates.push('excerpt = ?');
@@ -2150,7 +2201,8 @@ async function getMedia(env, id, request, ctx) {
   let response;
   try {
     response = await caches.default.match(cacheKey);
-    if (response) return response;
+    // 缓存命中同样要补安全头（同时覆盖改动前写入的旧缓存条目）
+    if (response) return withSecurityHeadersOnResponse(response);
   } catch {
     
   }
@@ -2160,7 +2212,7 @@ async function getMedia(env, id, request, ctx) {
   )
     .bind(id)
     .first();
-  if (!row) return new Response('Not found', { status: 404 });
+  if (!row) return new Response('Not found', { status: 404, headers: withSecurityHeaders() });
 
   const mimeType = String(row.mime_type || 'image/jpeg');
   let base64 = String(row.base64_data || '');
@@ -2174,29 +2226,29 @@ async function getMedia(env, id, request, ctx) {
       .all();
     const chunks = (chunkRows.results || []).map((r) => String(r.chunk_data || ''));
     if (chunks.length !== row.chunk_count) {
-      return new Response('Media incomplete', { status: 500 });
+      return new Response('Media incomplete', { status: 500, headers: withSecurityHeaders() });
     }
     base64 = chunks.join('');
   }
 
   if (!base64) {
-    return new Response('Media data empty', { status: 500 });
+    return new Response('Media data empty', { status: 500, headers: withSecurityHeaders() });
   }
 
   let binary;
   try {
     binary = base64ToBytes(base64);
   } catch (e) {
-    return new Response('Media decode failed', { status: 500 });
+    return new Response('Media decode failed', { status: 500, headers: withSecurityHeaders() });
   }
   response = new Response(binary, {
-    headers: {
+    headers: withSecurityHeaders({
       'Content-Type': ALLOWED_IMAGE_MIME.has(mimeType) ? mimeType : 'application/octet-stream',
       'X-Content-Type-Options': 'nosniff',
       'Content-Disposition': ALLOWED_IMAGE_MIME.has(mimeType) ? 'inline' : 'attachment',
       'Cache-Control': 'public, max-age=86400',
       'Content-Length': String(binary.length),
-    },
+    }),
   });
 
   try {
@@ -2574,7 +2626,12 @@ async function updateAuthSettings(request, env, user) {
         : String(body.hcaptchaSecret || '').trim(),
   };
   await setSetting(env, 'auth', data);
-  return jsonResponse(0, data, '保存成功');
+  // 出参脱敏与 getAuthSettings 保持一致：真实密钥只入库，绝不回传
+  const result = { ...data };
+  if (result.turnstileSecret) result.turnstileSecret = '****';
+  if (result.geetestCaptchaKey) result.geetestCaptchaKey = '****';
+  if (result.hcaptchaSecret) result.hcaptchaSecret = '****';
+  return jsonResponse(0, result, '保存成功');
 }
 
 
@@ -3444,13 +3501,13 @@ async function sendVerifyCode(request, env) {
       !!emailSettings.smtpPass);
 
   if (!emailConfigured) {
-    return jsonResponse(503, { sent: false }, '邮件服务未配置，无法发送验证码');
+    return jsonResponse(503, null, '邮件服务未配置，无法发送验证码');
   }
 
   
   const currentCount = await getEmailDailyCount(env);
   if (currentCount >= GLOBAL_DAILY_EMAIL_LIMIT) {
-    return jsonResponse(429, { sent: false }, '今日邮件发送总量已达上限，请明日再试');
+    return jsonResponse(429, null, '今日邮件发送总量已达上限，请明日再试');
   }
 
   try {
@@ -3477,14 +3534,17 @@ async function sendVerifyCode(request, env) {
     });
     await sendEmailByProvider(env, email, subject, text, html, true);
   } catch (e) {
+    // SMTP/Resend 原始错误（主机端口、STARTTLS、响应体等）只进服务端日志：该接口
+    // /api/v1/auth/verify-code 匿名可达（注册流程），回显 e.message 属信息泄露。
+    console.error('[verify-code] 邮件发送失败:', JSON.stringify({ username, email, emailConfigured, error: e.message || String(e) }));
     console.error(e);
     if (emailConfigured) {
-      return jsonResponse(500, { sent: false }, `邮件发送失败：${e.message || '未知错误'}`);
+      return jsonResponse(500, null, '邮件发送失败，请稍后再试');
     }
-    
   }
 
-  return jsonResponse(0, { sent: true }, '验证码已发送');
+  // 与 sendForgotCode 保持一致：data 恒为 null（前端不消费 sent，见 authStore.sendForgotCode）
+  return jsonResponse(0, null, '验证码已发送');
 }
 
 async function sendForgotCode(request, env) {
@@ -3522,27 +3582,11 @@ async function sendForgotCode(request, env) {
   }
 
   
-  const user = await env.DB_USERS.prepare(
-    'SELECT username, email FROM users WHERE username = ? OR email = ?'
-  )
-    .bind(username, fpEmail)
-    .first();
-  const matched =
-    !!user &&
-    user.username === username &&
-    String(user.email || '').toLowerCase() === fpEmail;
-  if (!matched) {
-    return jsonResponse(0, { sent: false, _debug: { matched: false, username, email } }, '验证码已发送');
-  }
-
-  const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-  await env.DB_USERS.prepare(
-    'INSERT INTO verify_codes (email, code, expires_at, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(email) DO UPDATE SET code = excluded.code, expires_at = excluded.expires_at, created_at = excluded.created_at'
-  )
-    .bind(fpEmail, code, expiresAt, now())
-    .run();
-
+  // —— 防枚举的顺序约束（勿把这两个检查移回 matched 之后）——
+  // 「邮件未配置 503」「全局额度耗尽 429」若排在 matched 之后，攻击者只看 body 的
+  // code 就能判定「该用户名+邮箱存在」（不存在时永远是 0），连文案都不用读。
+  // 前置之后，服务不可用时无论用户名邮箱对不对都是同一个 503/429，信号被抹平；
+  // 同时这两个返回发生在写 verify_codes 之前 —— 服务不可用时不会留下可用的验证码。
   const emailSettings = (await getSetting(env, 'email')) || {};
   const provider = emailSettings.provider || 'resend';
   const emailConfigured =
@@ -3554,18 +3598,40 @@ async function sendForgotCode(request, env) {
       !!emailSettings.smtpPass);
 
   if (!emailConfigured) {
-    return jsonResponse(503, { sent: false }, '邮件服务未配置，无法发送重置邮件');
+    console.error('[forgot-code] 邮件服务未配置，无法发送重置邮件:', JSON.stringify({ username, email, provider }));
+    return jsonResponse(503, null, '邮件服务未配置，无法发送重置邮件');
   }
 
-  
   const globalCount = await getEmailDailyCount(env);
   if (globalCount >= GLOBAL_DAILY_EMAIL_LIMIT) {
-    return jsonResponse(429, { sent: false }, '今日邮件发送总量已达上限，请明日再试');
+    return jsonResponse(429, null, '今日邮件发送总量已达上限，请明日再试');
   }
+
+  const user = await env.DB_USERS.prepare(
+    'SELECT username, email FROM users WHERE username = ? OR email = ?'
+  )
+    .bind(username, fpEmail)
+    .first();
+  const matched =
+    !!user &&
+    user.username === username &&
+    String(user.email || '').toLowerCase() === fpEmail;
+  if (!matched) {
+    // 对外统一回「验证码已发送」且 data 恒为 null，不靠 sent/matched 区分命中与否，避免枚举用户名/邮箱
+    console.warn('[forgot-code] 用户名与邮箱不匹配:', JSON.stringify({ username, email }));
+    return jsonResponse(0, null, '验证码已发送');
+  }
+
+  const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  await env.DB_USERS.prepare(
+    'INSERT INTO verify_codes (email, code, expires_at, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(email) DO UPDATE SET code = excluded.code, expires_at = excluded.expires_at, created_at = excluded.created_at'
+  )
+    .bind(fpEmail, code, expiresAt, now())
+    .run();
 
   let sendStatus = 'not_attempted';
   let sendError = '';
-  const debugBase = { matched: true, provider, emailConfigured, email };
 
   try {
     const db = getConfigDb(env);
@@ -3594,17 +3660,24 @@ async function sendForgotCode(request, env) {
     } catch (sendErr) {
       sendStatus = 'failed';
       sendError = sendErr.message || String(sendErr);
+      // SMTP/Resend 原始错误只进服务端日志，不回传调用方
+      console.error('[forgot-code] 邮件发送失败:', JSON.stringify({ username, email, provider, emailConfigured, sendStatus, sendError }));
       console.error(sendErr);
-      return jsonResponse(500, { sent: false, _debug: { ...debugBase, sendStatus, sendError } }, `邮件发送失败：${sendError}`);
     }
   } catch (e) {
+    // emailConfigured 已在前置校验里判过，走到这里必为 true；原先的 `if (emailConfigured)` 是恒真分支（else 不可达），已删除
+    sendStatus = 'template_failed';
+    sendError = e.message || String(e);
+    console.error('[forgot-code] 邮件模板处理失败:', JSON.stringify({ username, email, provider, emailConfigured, sendStatus, sendError, stage: 'template' }));
     console.error(e);
-    if (emailConfigured) {
-      return jsonResponse(500, { sent: false, _debug: { ...debugBase, sendStatus, sendError, stage: e.message || 'template' } }, `邮件发送失败：${e.message || '未知错误'}`);
-    }
   }
 
-  return jsonResponse(0, { sent: true, _debug: { ...debugBase, sendStatus, sendError } }, '验证码已发送');
+  console.log('[forgot-code] 处理完成:', JSON.stringify({ username, email, provider, emailConfigured, sendStatus, sendError }));
+  // —— 权衡说明（勿当 bug 改回 500/「邮件发送失败」）——
+  // 发送/模板失败也照样 200 +「验证码已发送」：本接口匿名可达，回失败文案等于告诉调用方
+  // 「该账号存在且正在给它发信」，配合 403/429 的差异即可枚举用户名+邮箱。宁可让用户
+  // 「看到已发送却没收到邮件」（10 分钟后自然过期，重发即可），真实原因只写服务端日志。
+  return jsonResponse(0, null, '验证码已发送');
 }
 
 async function resetPassword(request, env) {
@@ -3894,14 +3967,13 @@ async function sendCommentNotifications(request, env, postId, slug, commenter, c
   const errors = [];
   console.log('[comment-notify] notifySettings:', JSON.stringify(notifySettings));
   if (!notifySettings.enabled) {
-    const err = '评论邮件通知未开启（comment_notify.enabled 为 false）';
+    // 未开启属于后台配置状态，不回显给评论者；仅服务端日志可见
     console.log('[comment-notify] disabled, skip');
-    return [err];
+    return [];
   }
   if (!notifySettings.notifyEmail) {
-    const err = '未配置通知邮箱（comment_notify.notifyEmail 为空）';
     console.log('[comment-notify] notifyEmail empty, skip');
-    return [err];
+    return [];
   }
   console.log('[comment-notify] enabled, sending to:', notifySettings.notifyEmail);
 
@@ -3956,8 +4028,8 @@ async function sendCommentNotifications(request, env, postId, slug, commenter, c
         await sendEmailByProvider(env, parentUser.email, subject, text, html);
         errors.push('通知被回复用户成功(邮箱发送成功)');
       } catch (e) {
-        console.error('发送回复通知给用户失败:', e.message);
-        errors.push(`回复用户邮件失败: ${e.message}`);
+        console.error('发送回复通知给用户失败:', e.message, e);
+        errors.push('回复用户通知邮件发送失败');
       }
     }
 
@@ -3974,8 +4046,8 @@ async function sendCommentNotifications(request, env, postId, slug, commenter, c
         await sendEmailByProvider(env, notifySettings.notifyEmail, subject, text, html);
         errors.push('通知站长(新回复)邮件发送成功');
       } catch (e) {
-        console.error('发送新回复通知给站长失败:', e.message);
-        errors.push(`站长(新回复)邮件失败: ${e.message}`);
+        console.error('发送新回复通知给站长失败:', e.message, e);
+        errors.push('站长(新回复)通知邮件发送失败');
       }
     }
   } else {
@@ -3992,8 +4064,8 @@ async function sendCommentNotifications(request, env, postId, slug, commenter, c
         await sendEmailByProvider(env, notifySettings.notifyEmail, subject, text, html);
         errors.push('通知站长(新评论)邮件发送成功');
       } catch (e) {
-        console.error('发送新评论通知给站长失败:', e.message);
-        errors.push(`站长(新评论)邮件失败: ${e.message}`);
+        console.error('发送新评论通知给站长失败:', e.message, e);
+        errors.push('站长(新评论)通知邮件发送失败');
       }
     }
   }
@@ -4492,7 +4564,7 @@ async function adminDeleteChatMedia(request, env, user) {
   if (!env.CHAT) return jsonResponse(500, null, '聊天服务未绑定（env.CHAT）', 500);
   const upstream = await env.CHAT.fetch(buildChatSubUrl(roomKey, '/media/' + id), { method: 'DELETE' });
   const text = await upstream.text();
-  return new Response(text, { status: upstream.status, headers: { 'content-type': 'application/json' } });
+  return new Response(text, { status: upstream.status, headers: withSecurityHeaders({ 'content-type': 'application/json' }) });
 }
 
 
@@ -4963,6 +5035,30 @@ async function deleteAdminUser(request, env, user) {
 
 
 
+// 友链链接校验失败的文案后缀，由调用方拼各自前缀（'站点链接' / '友链链接'）
+const FRIEND_URL_ERRORS = {
+  empty: '必填',
+  'invalid-url': '非法（仅支持 http/https 绝对地址）',
+  protocol: '非法（协议仅支持 http/https）',
+};
+
+// 协议白名单：仅 http/https 绝对地址，禁止 javascript:/data:/file: 等（链接会被公开页直接渲染）；
+// 返回 { ok: true, url } 或 { ok: false, reason }
+function validateFriendUrl(raw) {
+  const value = String(raw == null ? '' : raw).trim();
+  if (!value) return { ok: false, reason: 'empty' };
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return { ok: false, reason: 'invalid-url' };
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { ok: false, reason: 'protocol' };
+  }
+  return { ok: true, url: value };
+}
+
 function rowToFriend(row) {
   return {
     id: row.id,
@@ -5001,7 +5097,9 @@ async function createFriend(request, env, user) {
   const sortOrder = body.sortOrder !== undefined ? parseInt(body.sortOrder, 10) || 0 : 0;
 
   if (!name) return jsonResponse(400, null, '友链名称必填');
-  if (!url) return jsonResponse(400, null, '友链链接必填');
+  // 与友链申请同一套协议白名单，防止绕过前端直调管理 API 写入 javascript:/data: 等链接
+  const urlCheck = validateFriendUrl(url);
+  if (!urlCheck.ok) return jsonResponse(400, null, `友链链接${FRIEND_URL_ERRORS[urlCheck.reason]}`);
 
   const time = now();
   const result = await env.DB_CONFIG.prepare(
@@ -5032,7 +5130,9 @@ async function updateFriend(request, env, user) {
   }
   if (body.url !== undefined) {
     const url = String(body.url).trim();
-    if (!url) return jsonResponse(400, null, '友链链接必填');
+    // 未传 url 时不校验；传了就必须过协议白名单
+    const urlCheck = validateFriendUrl(url);
+    if (!urlCheck.ok) return jsonResponse(400, null, `友链链接${FRIEND_URL_ERRORS[urlCheck.reason]}`);
     updates.push('url = ?');
     params.push(url);
   }
@@ -5092,7 +5192,8 @@ async function applyFriend(request, env, user) {
   }
 
   if (!name) return jsonResponse(400, null, '站点名称必填');
-  if (!url) return jsonResponse(400, null, '站点链接必填');
+  const urlCheck = validateFriendUrl(url);
+  if (!urlCheck.ok) return jsonResponse(400, null, `站点链接${FRIEND_URL_ERRORS[urlCheck.reason]}`);
 
   const time = now();
   let id = 1;
@@ -5999,11 +6100,11 @@ async function aiChat(request, env, user) {
         },
       });
       return new Response(readable, {
-        headers: {
+        headers: withSecurityHeaders({
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
           Connection: 'keep-alive',
-        },
+        }),
       });
     } catch (err) {
       console.error('custom chat error:', err);
@@ -6091,11 +6192,11 @@ async function aiChat(request, env, user) {
   });
 
   return new Response(readable, {
-    headers: {
+    headers: withSecurityHeaders({
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
-    },
+    }),
   });
 }
 
@@ -7766,11 +7867,11 @@ async function aiAgent(request, env, user) {
   });
 
   return new Response(readable, {
-    headers: {
+    headers: withSecurityHeaders({
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
-    },
+    }),
   });
 }
 
@@ -7921,7 +8022,8 @@ function openaiCorsHeaders() {
 function openaiJsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', ...openaiCorsHeaders() },
+    // 保留 openaiCorsHeaders() 的 CORS 头，只追加安全头
+    headers: withSecurityHeaders({ 'Content-Type': 'application/json', ...openaiCorsHeaders() }),
   });
 }
 
@@ -8010,12 +8112,12 @@ async function openaiChatCompletions(request, env) {
         },
       });
       return new Response(readable, {
-        headers: {
+        headers: withSecurityHeaders({
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
           Connection: 'keep-alive',
           ...openaiCorsHeaders(),
-        },
+        }),
       });
     } catch (err) {
       return openaiJsonResponse({ error: { message: err.message || String(err), type: 'ai_error' } }, 502);
@@ -8094,12 +8196,12 @@ async function openaiChatCompletions(request, env) {
   });
 
   return new Response(readable, {
-    headers: {
+    headers: withSecurityHeaders({
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
       ...openaiCorsHeaders(),
-    },
+    }),
   });
 }
 
@@ -8308,7 +8410,7 @@ async function proxyOgImage(request, env, ctx) {
   if (cacheKey) {
     try {
       const hit = await caches.default.match(cacheKey);
-      if (hit) return hit;
+      if (hit) return withSecurityHeadersOnResponse(hit);
     } catch {} // Cache API 异常降级（同 P2-3）
   }
 
@@ -8320,17 +8422,21 @@ async function proxyOgImage(request, env, ctx) {
   const result = await fetchImageThroughProxy(target, env, ctx); // §4.4
   if (result.status !== 200 || !result.resp) {
     // —— 失败回退：302 到原始图 URL，绝不缺图 ——
-    return new Response(null, { status: 302, headers: { Location: target } });
+    // 【302 上的安全头不是漏加】三条头只对本响应的文档生效，跳转后渲染的是 target
+    // 自己的响应头（302 固有语义）；本出口只服务 og:image，不会被 iframe 嵌套渲染，
+    // 点击劫持无从谈起（Referrer-Policy 反而有益）。下面两处 302 同理；
+    // 需防点击劫持的 HTML / 后台路由走 jsonResponse。
+    return new Response(null, { status: 302, headers: withSecurityHeaders({ Location: target }) });
   }
   const resp = result.resp;
   const ctype = (resp.headers.get('content-type') || '').toLowerCase();
 
-  // 仅透传图片；非图 / 非 200 一律不缓存
-  if (!ctype.startsWith('image/')) return new Response(null, { status: 302, headers: { Location: target } });
+  // 仅透传图片；非图 / 非 200 一律不缓存（302 回退的安全头语义同上，不是漏加）
+  if (!ctype.startsWith('image/')) return new Response(null, { status: 302, headers: withSecurityHeaders({ Location: target }) });
 
-  // —— 大小上限 ——
+  // —— 大小上限 ——（302 回退的安全头语义同上：og:image 场景无点击劫持风险，不是漏加）
   const bounded = await enforceSizeLimit(resp, IMG_PROXY_MAX_BYTES);
-  if (!bounded) return new Response(null, { status: 302, headers: { Location: target } });
+  if (!bounded) return new Response(null, { status: 302, headers: withSecurityHeaders({ Location: target }) });
 
   const headers = new Headers(bounded.headers);
   headers.set('Content-Type', ctype);
@@ -8338,7 +8444,7 @@ async function proxyOgImage(request, env, ctx) {
   headers.set('Access-Control-Allow-Origin', '*');
   headers.set('X-Content-Type-Options', 'nosniff');
 
-  const out = new Response(bounded.body, { status: 200, headers });
+  const out = new Response(bounded.body, { status: 200, headers: withSecurityHeaders(headers) });
 
   // —— 边缘缓存：写 ——（仅成功 + image，put 包 catch，同 P2-2）
   if (cacheKey) {
@@ -8398,7 +8504,8 @@ async function proxyImage(request) {
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
-      headers,
+      // 保留上游透传头 + CORS，只追加安全头
+      headers: withSecurityHeaders(headers),
     });
   } catch (err) {
     return jsonResponse(500, null, `图片代理失败：${err.message}`, 500);
@@ -8410,11 +8517,11 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response(null, {
         status: 204,
-        headers: {
+        headers: withSecurityHeaders({
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
           'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        },
+        }),
       });
     }
 
@@ -8556,7 +8663,7 @@ export default {
           body: JSON.stringify(body),
         });
         const text = await upstream.text();
-        return new Response(text, { status: upstream.status, headers: { 'content-type': 'application/json' } });
+        return new Response(text, { status: upstream.status, headers: withSecurityHeaders({ 'content-type': 'application/json' }) });
       }
 
       if (method === 'GET' && path.match(/^\/api\/v1\/chat\/media\/[^/]+\/[^/]+$/)) {
@@ -8567,7 +8674,7 @@ export default {
         const ok = await canViewChatRoomMedia(roomKey, request);
         if (ok !== true) return ok;
         const upstream = await env.CHAT.fetch(buildChatSubUrl(roomKey, '/media/' + id), { method: 'GET' });
-        return new Response(upstream.body, { status: upstream.status, headers: { 'content-type': upstream.headers.get('content-type') || 'image/jpeg', 'cache-control': upstream.headers.get('cache-control') || 'private, max-age=86400' } });
+        return new Response(upstream.body, { status: upstream.status, headers: withSecurityHeaders({ 'content-type': upstream.headers.get('content-type') || 'image/jpeg', 'cache-control': upstream.headers.get('cache-control') || 'private, max-age=86400' }) });
       }
       if (method === 'POST' && path === '/api/v1/chat/media/upload') {
         return await requireAuth(request, env, chatUploadMedia);
@@ -8795,6 +8902,21 @@ export default {
       if (env.ASSETS) {
         const assetResponse = await env.ASSETS.fetch(request);
         if (!assetResponse || assetResponse.status === 404) {
+          // 不存在的路径：返回根目录的 404.html（保持 404 状态码），取不到再退回 JSON
+          try {
+            const notFound = await env.ASSETS.fetch(new Request(url.origin + '/404.html'));
+            if (notFound && notFound.ok) {
+              return new Response(await notFound.text(), {
+                status: 404,
+                headers: withSecurityHeaders({
+                  'content-type': 'text/html;charset=UTF-8',
+                  'cache-control': 'no-cache',
+                }),
+              });
+            }
+          } catch (err) {
+            console.error('[404] 读取自定义 404 页面失败:', err);
+          }
           return jsonResponse(404, null, 'Not Found', 404);
         }
         const contentType = assetResponse.headers.get('content-type') || '';
@@ -8809,7 +8931,8 @@ export default {
             } catch {
               cached = null; // Cache API 异常时降级为正常渲染，避免整页打成 500(P2-3)
             }
-            if (cached) return cached;
+            // 缓存命中也要补安全头（同时覆盖改动前写入的旧缓存条目）
+            if (cached) return withSecurityHeadersOnResponse(cached);
           }
           const html = await assetResponse.text();
           const site = await getSiteConfigObject(env).catch(() => ({ ...defaultSiteConfig }));
@@ -8826,28 +8949,28 @@ export default {
           const resp = new Response(modifiedHtml, {
             status: assetResponse.status,
             statusText: assetResponse.statusText,
-            headers: assetResponse.headers,
+            headers: withSecurityHeaders(assetResponse.headers),
           });
           // 仅缓存“已查到发布文章”的 GET 响应，5 分钟 TTL；非文章页/404/回退一律不缓存
           if (cacheKey && post && resp.status === 200) {
             const cacheable = new Response(modifiedHtml, {
               status: 200,
-              headers: {
+              headers: withSecurityHeaders({
                 'content-type': 'text/html;charset=UTF-8',
                 'Cache-Control': 'public, s-maxage=300',
-              },
+              }),
             });
             // 写缓存失败不产生 unhandled rejection(P2-2)
             ctx.waitUntil(caches.default.put(cacheKey, cacheable).catch(() => {}));
           }
           return resp;
         }
-        return assetResponse;
+        return withSecurityHeadersOnResponse(assetResponse);
       }
 
       return jsonResponse(404, null, 'Not Found', 404);
     } catch (err) {
-      console.error(err);
+      console.error('[unhandled] Worker 内部异常:', err);
       const msg = err.message || 'Internal Server Error';
       
       if (
@@ -8856,14 +8979,16 @@ export default {
         msg.includes("Cannot read property 'prepare' of undefined") ||
         msg.includes('DB_CONFIG.prepare is not a function')
       ) {
+        // 绑定调试信息只进服务端日志，不回传客户端
+        console.error('[unhandled] D1 绑定异常详情:', getBindingDebugInfo(env, err));
         return jsonResponse(
           500,
-          { _debug: getBindingDebugInfo(env, err) },
+          null,
           'D1 数据库绑定异常，请检查 DB_CONFIG/DB_USERS/DB_POSTS/DB_MEDIA 是否已在 Cloudflare Dashboard 中正确绑定并重新部署。',
           500
         );
       }
-      return jsonResponse(500, null, msg, 500);
+      return jsonResponse(500, null, '服务器内部错误，请稍后再试', 500);
     }
   },
 };

@@ -1417,7 +1417,9 @@ export function AdminPosts() {
               value={form.slug}
               onChange={(e) => setForm((prev) => ({ ...prev, slug: e.target.value }))}
               sx={{ flex: 1, minWidth: { xs: '100%', sm: 240 } }}
-              placeholder="留空将自动生成"
+              // 服务端两种场景语义不同：createPost 空 slug 会自动生成，updatePost 空 slug 则保留原值。
+              // 同一句提示服务两种场景会在编辑态误导管理员，故按 editingId 区分文案。
+              placeholder={editingId ? '留空将保留原 Slug' : '留空将自动生成'}
             />
             <FormControl sx={{ flex: 1, minWidth: { xs: '100%', sm: 240 } }}>
               <InputLabel id="tags-label">标签</InputLabel>

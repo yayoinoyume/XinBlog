@@ -110,7 +110,7 @@ interface CustomRequestInit extends RequestInit {
   _retry?: boolean;
 }
 
-async function refreshAccessToken(): Promise<boolean> {
+async function doRefreshAccessToken(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
   try {
     const raw = localStorage.getItem('auth-state');
@@ -146,6 +146,22 @@ async function refreshAccessToken(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * 刷新期间共享的 Promise（single-flight）。服务端 refresh token 是一次性轮换：刷新成功后
+ * 旧 token 立即失效。access token 过期瞬间常有多个并发 401，若各自发一次刷新，先成功的那次
+ * 会让其余请求带着失效旧 token 拿到 401，被判登录失效而 logout() —— 用户被莫名登出。
+ * 共用同一个 Promise 后网络上只发一次 /api/v1/auth/refresh，「刷新失败 → logout」也只执行一次。
+ */
+let refreshPromise: Promise<boolean> | null = null;
+
+function refreshAccessToken(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = doRefreshAccessToken().finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
 }
 
 async function fetchInternal<T = unknown>(path: string, options: RequestInit): Promise<ApiResult<T>> {
@@ -256,7 +272,12 @@ export async function apiGet<T = unknown>(path: string, init?: Pick<RequestInit,
   return apiFetch<T>(path, { method: 'GET', ...init });
 }
 
-export async function apiPost<T = unknown>(path: string, body: unknown, options: Omit<RequestInit, 'method' | 'body'> = {}) {
+// options 额外允许 _retry：调用方可声明「这次请求不要再走 401 → 刷新重试」
+export async function apiPost<T = unknown>(
+  path: string,
+  body: unknown,
+  options: Omit<RequestInit, 'method' | 'body'> & { _retry?: boolean } = {}
+) {
   return apiFetch<T>(path, { ...options, method: 'POST', body: JSON.stringify(body) });
 }
 

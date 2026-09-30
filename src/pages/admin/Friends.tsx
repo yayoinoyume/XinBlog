@@ -37,7 +37,7 @@ import {
   Divider,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { Add, Close, DeleteOutline, Edit, Image as ImageIcon, Link as LinkIcon, Save } from '@mui/icons-material';
+import { Add, BlockOutlined, Close, DeleteOutline, Edit, Image as ImageIcon, Link as LinkIcon, Save } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { useSiteStore } from '@/stores/siteStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -66,6 +66,23 @@ const TAB_LIST: { value: FriendsTab; label: string }[] = [
 ];
 const MAX_AVATAR_SIZE = 30 * 1024;
 import { getBase64Size, compressImage } from '@/utils/image';
+import { isValidFriendUrl } from '@/utils/url';
+/** 预览安全：友链 URL 由用户自填，同源文档是沙箱逃逸风险最高的情形，一律不渲染。
+ * 入参已过 isValidFriendUrl，故只需处理「协议合法但 host 与本站相同」的 http/https URL
+ * （如 http://localhost:5173/foo、内网端口地址）。 */
+function isSameOriginUrl(raw: string): boolean {
+  try {
+    return new URL(raw, window.location.href).host === window.location.host;
+  } catch {
+    return true; // 无法解析时按最严格处理：阻止渲染
+  }
+}
+/** 预览拦截原因：返回 null 表示可安全渲染；返回字符串则作为拦截提示文案。 */
+function previewBlockReason(raw: string): string | null {
+  if (!isValidFriendUrl(raw)) return '链接不合法（仅支持 http/https 绝对地址），已阻止预览';
+  if (isSameOriginUrl(raw)) return '该链接与本站同源，已阻止预览';
+  return null;
+}
 function AvatarField({
   value,
   onChange,
@@ -213,6 +230,7 @@ function FriendEditDialog({
   const [description, setDescription] = useState('');
   const [avatar, setAvatar] = useState('');
   const [sortOrder, setSortOrder] = useState('0');
+  const [urlError, setUrlError] = useState('');
   useEffect(() => {
     if (open) {
       setName(friend?.name || '');
@@ -220,13 +238,25 @@ function FriendEditDialog({
       setDescription(friend?.description || '');
       setAvatar(friend?.avatar || '');
       setSortOrder(String(friend?.sortOrder ?? 0));
+      setUrlError('');
     }
   }, [open, friend]);
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmedUrl = url.trim();
+    // 前端拦截非法协议/非绝对地址，避免 javascript: 等危险链接入库
+    if (!trimmedUrl) {
+      setUrlError('站点链接必填');
+      return;
+    }
+    if (!isValidFriendUrl(trimmedUrl)) {
+      setUrlError('请输入以 http:// 或 https:// 开头的完整地址');
+      return;
+    }
+    setUrlError('');
     onSave({
       name: name.trim(),
-      url: url.trim(),
+      url: trimmedUrl,
       description: description.trim(),
       avatar: avatar.trim(),
       sortOrder: parseInt(sortOrder, 10) || 0,
@@ -248,10 +278,16 @@ function FriendEditDialog({
             <TextField
               label="站点链接"
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(e) => {
+                setUrl(e.target.value);
+                if (urlError) setUrlError('');
+              }}
               fullWidth
               required
+              error={Boolean(urlError)}
+              helperText={urlError || '仅支持 http/https 开头的绝对地址'}
               placeholder="https://example.com"
+              inputMode="url"
               InputProps={{
                 startAdornment: <LinkIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />,
               }}
@@ -563,6 +599,8 @@ export function AdminFriends() {
   };
   const renderAuditPanel = () => {
     if (appLoading && applications.length === 0) return <Loading />;
+    // 同源（含解析为本站的相对路径）不渲染 iframe：沙箱再严，同源预览也无价值且逃逸风险最高
+    const previewBlock = detailApp?.url ? previewBlockReason(detailApp.url) : null;
     return (
       <>
         {applications.length === 0 ? (
@@ -829,15 +867,32 @@ export function AdminFriends() {
                         borderRadius: 1,
                         bgcolor: 'action.hover',
                         display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                       }}
                     >
-                      <iframe
-                        src={detailApp.url}
-                        title={`${detailApp.name} 预览`}
-                        style={{ width: '100%', height: '100%', border: 'none', flex: 1 }}
-                        sandbox="allow-scripts allow-same-origin"
-                        loading="lazy"
-                      />
+                      {previewBlock ? (
+                        <Stack spacing={0.5} sx={{ px: 3, textAlign: 'center' }}>
+                          <BlockOutlined sx={{ color: 'text.secondary' }} />
+                          <Typography variant="body2" color="text.secondary">
+                            {previewBlock}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            请点击上方链接在新标签页查看
+                          </Typography>
+                        </Stack>
+                      ) : (
+                        // 只给 allow-scripts：一旦同时给 allow-same-origin，同源文档即可跳出沙箱，
+                        // 通过 parent.localStorage 读走管理员 JWT / refreshToken，故绝不开启 allow-same-origin
+                        <iframe
+                          src={detailApp.url}
+                          title={`${detailApp.name} 预览`}
+                          style={{ width: '100%', height: '100%', border: 'none', flex: 1 }}
+                          sandbox="allow-scripts"
+                          referrerPolicy="no-referrer"
+                          loading="lazy"
+                        />
+                      )}
                     </Paper>
                   </Box>
                 )}
