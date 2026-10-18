@@ -1,12 +1,13 @@
-import { forwardRef } from 'react';
+import { forwardRef, useState } from 'react';
 import { Box, Chip, Container, Skeleton, Typography, alpha } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import type { HeroConfig } from '@/types';
 
 
-export const HeroFullscreen = forwardRef<HTMLDivElement, { hero?: HeroConfig; bgLoaded?: boolean }>(
-  function HeroFullscreen({ hero, bgLoaded }, ref) {
+export const HeroFullscreen = forwardRef<HTMLDivElement, { hero?: HeroConfig }>(
+  function HeroFullscreen({ hero }, ref) {
     const hasBg = Boolean(hero?.backgroundImage);
+    const [bgLoaded, setBgLoaded] = useState(false);
 
     return (
       <Box
@@ -34,9 +35,10 @@ export const HeroFullscreen = forwardRef<HTMLDivElement, { hero?: HeroConfig; bg
             )}
             <Box
               component="img"
+              key={hero?.backgroundImage}
               src={hero?.backgroundImage}
               alt=""
-              onLoad={() => bgLoaded !== undefined && (bgLoaded as boolean)}
+              onLoad={() => setBgLoaded(true)}
               sx={{
                 position: 'absolute',
                 inset: 0,

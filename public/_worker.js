@@ -855,11 +855,6 @@ const defaultSiteConfig = {
     title: '',
     subtitle: '',
     badge: '',
-    layout: {
-      cols: 6,
-      gap: 16,
-      widgets: [],
-    },
   },
   about: {
     name: '',
@@ -1439,8 +1434,16 @@ async function refreshToken(request, env) {
   const refreshToken = String(body.refreshToken || '');
   if (!refreshToken) return jsonResponse(400, null, 'Refresh token required');
 
+  // 建表失败不应等同于「token 无效」：把 D1 瞬时抖动降级为跳过重用检测，
+  // 仍按 token_hash 正常校验，避免误把有效会话登出。
+  let jtiReady = true;
   try {
     await ensureRefreshJtiTable(env);
+  } catch {
+    jtiReady = false;
+  }
+
+  try {
     const payload = await verifyJWT(refreshToken, env.JWT_SECRET);
     if (payload.type !== 'refresh') throw new Error('Invalid token type');
 
@@ -1452,7 +1455,7 @@ async function refreshToken(request, env) {
     
     
     if (!row) {
-      const used = payload.jti
+      const used = jtiReady && payload.jti
         ? await env.DB_USERS.prepare('SELECT consumed FROM refresh_token_jtis WHERE jti = ?').bind(payload.jti).first()
         : null;
       if (used && used.consumed === 1) {
@@ -1477,7 +1480,7 @@ async function refreshToken(request, env) {
 
     
     await env.DB_USERS.prepare('DELETE FROM refresh_tokens WHERE token_hash = ?').bind(tokenHash).run();
-    if (payload.jti) {
+    if (jtiReady && payload.jti) {
       await env.DB_USERS.prepare('UPDATE refresh_token_jtis SET consumed = 1 WHERE jti = ?').bind(payload.jti).run();
     }
     const newRefreshJti = crypto.randomUUID();
@@ -1492,9 +1495,11 @@ async function refreshToken(request, env) {
     )
       .bind(newRefreshTokenHash, user.id, new Date(refreshExpSec * 1000).toISOString())
       .run();
-    await env.DB_USERS.prepare('INSERT INTO refresh_token_jtis (jti, user_id, consumed, created_at) VALUES (?, ?, 0, ?)')
-      .bind(newRefreshJti, user.id, now())
-      .run();
+    if (jtiReady) {
+      await env.DB_USERS.prepare('INSERT INTO refresh_token_jtis (jti, user_id, consumed, created_at) VALUES (?, ?, 0, ?)')
+        .bind(newRefreshJti, user.id, now())
+        .run();
+    }
 
     return jsonResponse(0, {
       accessToken,
