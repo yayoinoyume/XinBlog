@@ -20,6 +20,8 @@ export default defineConfig([
     },
     rules: {
       'react-hooks/set-state-in-effect': 'off',
+      // 解构只为剔除属性（如 react-markdown 注入的 node）时，剩余项已用尽，不应报未使用
+      '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }],
     },
   },
 ])
