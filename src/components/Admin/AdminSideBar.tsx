@@ -32,7 +32,6 @@ import {
   Palette,
   PermMedia,
   Settings,
-  SmartToy,
   Style,
   TravelExplore,
 } from '@mui/icons-material';
@@ -65,7 +64,6 @@ const adminNavItems: NavItem[] = [
   { title: '友链管理', path: '/admin/friends', icon: <Diversity3 fontSize="small" /> },
   { title: 'AI', path: '/admin/ai', icon: <AutoAwesome fontSize="small" />, superOnly: true },
   { title: '外观设置', path: '/admin/appearance', icon: <Palette fontSize="small" />, superOnly: true },
-  { title: '看板娘', path: '/admin/live2d', icon: <SmartToy fontSize="small" />, superOnly: true },
   { title: '音乐播放器', path: '/admin/music', icon: <MusicNote fontSize="small" />, superOnly: true },
   { title: '主题设置', path: '/admin/themes', icon: <Style fontSize="small" />, superOnly: true },
   { title: '协议管理', path: '/admin/terms', icon: <Description fontSize="small" />, superOnly: true },

@@ -155,26 +155,6 @@ export interface ThemePackage {
   components: ThemeComponents;
 }
 
-export interface Live2dConfig {
-  enabled: boolean;
-  mobileEnabled: boolean;
-  position: 'left' | 'right';
-  width: number;
-  height: number;
-  mobileWidth?: number;
-  mobileHeight?: number;
-  tools: string[];
-  drag: boolean;
-  showToggleAfterQuit: boolean;
-  logLevel: 'error' | 'warn' | 'info' | 'trace';
-  modelSource: 'local' | 'cdn';
-  customCdn?: string;
-  waifuPath: string;
-  cdnPath: string;
-  cubism2Path: string;
-  cubism5Path: string;
-}
-
 export type MusicPlayMode = 'list' | 'single' | 'random';
 
 export interface MusicPlayerConfig {
@@ -257,7 +237,6 @@ export interface SiteConfig {
   font?: SiteFontConfig;
   cursor?: SiteCursorConfig;
   clickEffect?: ClickEffectConfig;
-  live2d?: Live2dConfig;
   music?: MusicPlayerConfig;
   postLayout?: 'grid' | 'list' | 'magazine';
   footerText?: string;

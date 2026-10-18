@@ -24,7 +24,6 @@ const AdminPosts = lazy(() => import('@/pages/admin/Posts').then((m) => ({ defau
 const AdminTags = lazy(() => import('@/pages/admin/Tags').then((m) => ({ default: m.AdminTags })));
 const AdminMedia = lazy(() => import('@/pages/admin/Media').then((m) => ({ default: m.AdminMedia })));
 const AdminSettings = lazy(() => import('@/pages/admin/AdminSettings').then((m) => ({ default: m.AdminSettings })));
-const AdminLive2d = lazy(() => import('@/pages/admin/Live2d').then((m) => ({ default: m.AdminLive2d })));
 const AdminMusic = lazy(() => import('@/pages/admin/Music').then((m) => ({ default: m.AdminMusic })));
 const AdminAdvancedSettings = lazy(() => import('@/pages/admin/AdvancedSettings').then((m) => ({ default: m.AdvancedSettings })));
 const AdminSeoSettings = lazy(() => import('@/pages/admin/SeoSettings').then((m) => ({ default: m.SeoSettings })));
@@ -230,7 +229,6 @@ export const router = createBrowserRouter([
       { path: 'media', element: <SuspensePage><AdminMedia /></SuspensePage> },
 
       { path: 'appearance', element: <SuspensePage><RequireSuper><AdminAppearance /></RequireSuper></SuspensePage> },
-      { path: 'live2d', element: <SuspensePage><RequireSuper><AdminLive2d /></RequireSuper></SuspensePage> },
       { path: 'music', element: <SuspensePage><RequireSuper><AdminMusic /></RequireSuper></SuspensePage> },
       { path: 'advanced', element: <SuspensePage><RequireSuper><AdminAdvancedSettings /></RequireSuper></SuspensePage> },
       { path: 'seo', element: <SuspensePage><RequireSuper><AdminSeoSettings /></RequireSuper></SuspensePage> },

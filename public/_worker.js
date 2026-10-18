@@ -872,20 +872,6 @@ const defaultSiteConfig = {
     fonts: [],
     fallback: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   },
-  live2d: {
-    enabled: false,
-    position: 'right',
-    width: 280,
-    height: 280,
-    tools: ['hitokoto', 'asteroids', 'switch-model', 'switch-texture', 'photo', 'info', 'quit'],
-    drag: false,
-    showToggleAfterQuit: true,
-    logLevel: 'warn',
-    waifuPath: '/live2d/waifu-tips.json',
-    cdnPath: '/live2d-models/',
-    cubism2Path: '/live2d/live2d.min.js',
-    cubism5Path: 'https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js',
-  },
   nav: {
     items: [],
     theme: {

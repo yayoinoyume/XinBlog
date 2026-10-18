@@ -4,7 +4,6 @@ import { useLocation } from 'react-router-dom';
 import { NavBar } from './NavBar';
 import { SideBar, drawerWidth, miniDrawerWidth, mobileDrawerWidth } from './SideBar';
 import { Footer } from './Footer';
-import { Live2DWidget } from '@/components/Live2D/Live2DWidget';
 import { useUIStore } from '@/stores/uiStore';
 import { useSiteStore } from '@/stores/siteStore';
 import { useSmoothScroll } from '@/hooks/useSmoothScroll';
@@ -156,8 +155,6 @@ export function MainLayout({ children }: MainLayoutProps) {
         </Box>
 
       </Box>
-
-      {!isImmersive && <Live2DWidget />}
     </Box>
 
   );
