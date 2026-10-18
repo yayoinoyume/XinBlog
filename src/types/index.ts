@@ -155,26 +155,6 @@ export interface ThemePackage {
   components: ThemeComponents;
 }
 
-export interface Live2dConfig {
-  enabled: boolean;
-  mobileEnabled: boolean;
-  position: 'left' | 'right';
-  width: number;
-  height: number;
-  mobileWidth?: number;
-  mobileHeight?: number;
-  tools: string[];
-  drag: boolean;
-  showToggleAfterQuit: boolean;
-  logLevel: 'error' | 'warn' | 'info' | 'trace';
-  modelSource: 'local' | 'cdn';
-  customCdn?: string;
-  waifuPath: string;
-  cdnPath: string;
-  cubism2Path: string;
-  cubism5Path: string;
-}
-
 export type MusicPlayMode = 'list' | 'single' | 'random';
 
 export interface MusicPlayerConfig {
@@ -257,7 +237,6 @@ export interface SiteConfig {
   font?: SiteFontConfig;
   cursor?: SiteCursorConfig;
   clickEffect?: ClickEffectConfig;
-  live2d?: Live2dConfig;
   music?: MusicPlayerConfig;
   postLayout?: 'grid' | 'list' | 'magazine';
   footerText?: string;
@@ -344,7 +323,7 @@ export interface NavThemeConfig {
 }
 
 export interface NavConfig {
-  /** 导航栏布局：sidebar=侧边栏，top=顶部标签栏。上游新增。 */
+  /** 导航栏布局：sidebar=侧边栏，top=顶部标签栏。 */
   layout?: 'sidebar' | 'top';
   items: NavItemConfig[];
   theme?: NavThemeConfig;
@@ -357,33 +336,16 @@ export interface SiteThemeConfig {
   borderRadius?: number;
 }
 
-export interface HeroWidgetConfig {
-  id: string;
-  type: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  props?: Record<string, unknown>;
-  hideOnMobile?: boolean;
-}
-
-export interface HeroLayout {
-  cols: number;
-  gap: number;
-  widgets: HeroWidgetConfig[];
-}
-
 export interface HeroConfig {
   enabled?: boolean;
-  mode?: 'classic' | 'bento';
+  
+  mode?: 'classic' | 'fullscreen';
   backgroundImage?: string;
   backgroundColor?: string;
   useCustomUrl?: boolean;
   title?: string;
   subtitle?: string;
   badge?: string;
-  layout?: HeroLayout;
 }
 
 export interface SocialLink {

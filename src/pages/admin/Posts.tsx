@@ -104,6 +104,7 @@ const emptyForm = {
 import { getBase64Size, compressImage } from '@/utils/image';
 import { createPortal } from 'react-dom';
 import type { PostPreviewInput, PostPreviewMeta } from './PostPreview';
+import { useSearchParams } from 'react-router-dom';
 
 // 预览面板懒加载：Markdown 渲染链路（react-markdown / rehype-highlight / katex）
 // 只在首次切到预览时才会载入，且与前台详情页路由共享同一份 chunk，不增大后台首屏
@@ -123,6 +124,7 @@ function slugifyTag(text: string): string {
 
 
 export function AdminPosts() {
+  const [searchParams] = useSearchParams();
   const theme = useTheme();
   const isMobileAdmin = useMediaQuery(theme.breakpoints.down('lg'));
   const aiAsOverlay = useMediaQuery(theme.breakpoints.down('md'));
@@ -240,6 +242,29 @@ export function AdminPosts() {
   useEffect(() => {
     loadData(!(postsCache.hit && tagsCache.hit));
     
+  }, []);
+
+
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (editId) {
+      const id = Number(editId);
+      if (Number.isFinite(id) && id > 0) {
+        setEditorLoading(true);
+        fetchAdminPost(id).then((p) => {
+          if (p) {
+            void handleOpenEdit(p);
+          } else {
+            setEditorLoading(false);
+          }
+        });
+        return;
+      }
+    }
+    if (searchParams.get('compose') === '1') {
+      handleOpenCreate();
+    }
+
   }, []);
 
   useEffect(() => {
@@ -476,6 +501,10 @@ export function AdminPosts() {
     setPendingMediaIds([]);
     setView('list');
     await loadData();
+    
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'admin-frame-saved' }, '*');
+    }
   };
 
   const handleDelete = async () => {

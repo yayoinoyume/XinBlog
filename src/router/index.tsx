@@ -7,6 +7,7 @@ import { PageLoading } from '@/components/Common/Loading';
 import { RouteErrorBoundary } from '@/components/Common/RouteErrorBoundary';
 import { useAuthStore } from '@/stores/authStore';
 import { isContentAdmin, isSuperAdmin } from '@/utils/permission';
+
 const Home = lazy(() => import('@/pages/Home').then((m) => ({ default: m.Home })));
 const PostDetail = lazy(() => import('@/pages/PostDetail').then((m) => ({ default: m.PostDetail })));
 const TagPage = lazy(() => import('@/pages/TagPage').then((m) => ({ default: m.TagPage })));
@@ -21,7 +22,6 @@ const AdminPosts = lazy(() => import('@/pages/admin/Posts').then((m) => ({ defau
 const AdminTags = lazy(() => import('@/pages/admin/Tags').then((m) => ({ default: m.AdminTags })));
 const AdminMedia = lazy(() => import('@/pages/admin/Media').then((m) => ({ default: m.AdminMedia })));
 const AdminSettings = lazy(() => import('@/pages/admin/AdminSettings').then((m) => ({ default: m.AdminSettings })));
-const AdminLive2d = lazy(() => import('@/pages/admin/Live2d').then((m) => ({ default: m.AdminLive2d })));
 const AdminMusic = lazy(() => import('@/pages/admin/Music').then((m) => ({ default: m.AdminMusic })));
 const AdminAdvancedSettings = lazy(() => import('@/pages/admin/AdvancedSettings').then((m) => ({ default: m.AdvancedSettings })));
 const AdminSeoSettings = lazy(() => import('@/pages/admin/SeoSettings').then((m) => ({ default: m.SeoSettings })));
@@ -41,9 +41,12 @@ const Chat = lazy(() => import('@/pages/Chat').then((m) => ({ default: m.default
 const ChatRoom = lazy(() => import('@/pages/ChatRoom').then((m) => ({ default: m.default })));
 const Agent = lazy(() => import('@/pages/Agent').then((m) => ({ default: m.default })));
 const AgentChat = lazy(() => import('@/pages/AgentChat').then((m) => ({ default: m.default })));
+
 function SuspensePage({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<PageLoading />}>{children}</Suspense>;
+
 }
+
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -53,9 +56,12 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   const [checking, setChecking] = useState(true);
   const [valid, setValid] = useState(false);
   const [forbidden, setForbidden] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
+
     const verify = async () => {
+      
       if (!isAuthenticated || !token || !user) {
         if (!cancelled) {
           setForbidden(false);
@@ -64,6 +70,8 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
         }
         return;
       }
+
+      
       if (!isContentAdmin(user.role)) {
         if (!cancelled) {
           setForbidden(true);
@@ -72,6 +80,8 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
         }
         return;
       }
+
+      
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
         const now = Math.floor(Date.now() / 1000);
@@ -91,6 +101,8 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
         }
         return;
       }
+
+      
       const ok = await refresh();
       if (!cancelled) {
         setForbidden(false);
@@ -98,24 +110,36 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
         setChecking(false);
       }
     };
+
     verify();
+
     return () => {
       cancelled = true;
     };
   }, [isAuthenticated, token, user, refresh]);
+
+  
   if (checking) return <PageLoading />;
+
+  
   if (forbidden) {
     return (
       <SuspensePage>
         <AdminForbidden />
       </SuspensePage>
+
     );
   }
+
   if (!valid) {
     return <Navigate to="/admin/login" state={{ from: location }} replace />;
   }
+
   return <>{children}</>;
+
 }
+
+
 function RequireSuper({ children }: { children: React.ReactNode }) {
   const user = useAuthStore((state) => state.user);
   if (!user || !isSuperAdmin(user.role)) {
@@ -123,10 +147,13 @@ function RequireSuper({ children }: { children: React.ReactNode }) {
       <SuspensePage>
         <AdminForbidden />
       </SuspensePage>
+
     );
   }
   return <>{children}</>;
+
 }
+
 export const router = createBrowserRouter([
   {
     path: '/',
@@ -134,35 +161,51 @@ export const router = createBrowserRouter([
       <MainLayout>
         <Outlet />
       </MainLayout>
+
     ),
     errorElement: <RouteErrorBoundary />,
     children: [
       { index: true, element: <SuspensePage><Home /></SuspensePage> },
+
       { path: 'post/:slug', element: <SuspensePage><PostDetail /></SuspensePage> },
+
       { path: 'tag/:slug', element: <SuspensePage><TagPage /></SuspensePage> },
+
       { path: 'about', element: <SuspensePage><About /></SuspensePage> },
+
       { path: 'friends', element: <SuspensePage><Friends /></SuspensePage> },
+
       { path: 'profile', element: <SuspensePage><Profile /></SuspensePage> },
+
       { path: 'music', element: <SuspensePage><MusicPage /></SuspensePage> },
+
       { path: 'message-wall', element: <SuspensePage><MessageWall /></SuspensePage> },
+
       { path: 'chat', element: <SuspensePage><Chat /></SuspensePage> },
+
       { path: 'chat/:roomKey', element: <SuspensePage><ChatRoom /></SuspensePage> },
+
       { path: 'agent', element: <RequireAuth><SuspensePage><Agent /></SuspensePage></RequireAuth> },
       { path: 'agent/:dialogId', element: <RequireAuth><SuspensePage><AgentChat /></SuspensePage></RequireAuth> },
       { path: 'agreement', element: <SuspensePage><Terms /></SuspensePage> },
+
       { path: 'privacy', element: <SuspensePage><Terms /></SuspensePage> },
+
       { path: '404', element: <SuspensePage><NotFound /></SuspensePage> },
+
       { path: '*', element: <Navigate to="/404" replace /> },
     ],
   },
   {
     path: '/admin/login',
     element: <SuspensePage><AdminLogin /></SuspensePage>,
+
     errorElement: <RouteErrorBoundary />,
   },
   {
     path: '/forgot-password',
     element: <SuspensePage><ForgotPassword /></SuspensePage>,
+
     errorElement: <RouteErrorBoundary />,
   },
   {
@@ -171,22 +214,29 @@ export const router = createBrowserRouter([
       <RequireAuth>
         <AdminLayout />
       </RequireAuth>
+
     ),
     errorElement: <RouteErrorBoundary />,
     children: [
       { index: true, element: <SuspensePage><AdminDashboard /></SuspensePage> },
+
       { path: 'posts', element: <SuspensePage><AdminPosts /></SuspensePage> },
+
       { path: 'tags', element: <SuspensePage><AdminTags /></SuspensePage> },
+
       { path: 'media', element: <SuspensePage><AdminMedia /></SuspensePage> },
+
       { path: 'appearance', element: <SuspensePage><RequireSuper><AdminAppearance /></RequireSuper></SuspensePage> },
-      { path: 'live2d', element: <SuspensePage><RequireSuper><AdminLive2d /></RequireSuper></SuspensePage> },
       { path: 'music', element: <SuspensePage><RequireSuper><AdminMusic /></RequireSuper></SuspensePage> },
       { path: 'advanced', element: <SuspensePage><RequireSuper><AdminAdvancedSettings /></RequireSuper></SuspensePage> },
       { path: 'seo', element: <SuspensePage><RequireSuper><AdminSeoSettings /></RequireSuper></SuspensePage> },
       { path: 'comments', element: <SuspensePage><AdminComments /></SuspensePage> },
+
       { path: 'message-wall', element: <SuspensePage><AdminMessageWall /></SuspensePage> },
+
       { path: 'chat', element: <SuspensePage><RequireSuper><AdminChat /></RequireSuper></SuspensePage> },
       { path: 'friends', element: <SuspensePage><AdminFriends /></SuspensePage> },
+
       { path: 'ai', element: <SuspensePage><RequireSuper><AdminAi /></RequireSuper></SuspensePage> },
       { path: 'themes', element: <SuspensePage><RequireSuper><AdminThemeSettings /></RequireSuper></SuspensePage> },
       { path: 'terms', element: <SuspensePage><RequireSuper><TermsEditor /></RequireSuper></SuspensePage> },

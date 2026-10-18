@@ -4,15 +4,16 @@ import { useLocation } from 'react-router-dom';
 import { NavBar } from './NavBar';
 import { SideBar, drawerWidth, miniDrawerWidth, mobileDrawerWidth } from './SideBar';
 import { Footer } from './Footer';
-import { Live2DWidget } from '@/components/Live2D/Live2DWidget';
 import { useUIStore } from '@/stores/uiStore';
 import { useSiteStore } from '@/stores/siteStore';
 import { useSmoothScroll } from '@/hooks/useSmoothScroll';
 import { useSafeMediaQuery } from '@/hooks/useSafeMediaQuery';
 import { resolveSpacingConfig } from '@/utils/spacingConfig';
+
 interface MainLayoutProps {
   children: React.ReactNode;
 }
+
 export function MainLayout({ children }: MainLayoutProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { sidebarCollapsed } = useUIStore();
@@ -26,17 +27,30 @@ export function MainLayout({ children }: MainLayoutProps) {
     disableOnTouch: true,
     enabled: !config.disableSmoothScroll,
   });
+
   const hasBackground = Boolean(config.backgroundImage);
   const backgroundOpacity = config.backgroundOpacity ?? 1;
   const backgroundBlur = config.backgroundBlur ?? 0;
   const spacing = resolveSpacingConfig(config.spacing);
+
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
   };
+
   useEffect(() => {
     scrollToTop(true);
   }, [location.pathname, scrollToTop]);
+
+  
+  
   const isImmersive = location.pathname.startsWith('/chat/') || location.pathname.startsWith('/agent/');
+
+  
+  
+  const isFullscreenHero = location.pathname === '/' && config.hero?.mode === 'fullscreen';
+
+  
+  
   const useTopNav = config.nav?.layout === 'top';
   const isDesktop = useSafeMediaQuery((t) => t.breakpoints.up('md'), true);
   const currentDrawerWidth = useTopNav
@@ -44,6 +58,8 @@ export function MainLayout({ children }: MainLayoutProps) {
     : isDesktop
       ? (sidebarCollapsed ? miniDrawerWidth : drawerWidth)
       : mobileDrawerWidth;
+
+  
   const backgroundLayer = hasBackground ? (
     <Box
       sx={{
@@ -60,6 +76,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       }}
     />
   ) : null;
+
   return (
     <Box
       sx={{
@@ -81,6 +98,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           drawerWidth={currentDrawerWidth}
           scrollTargetRef={mainRef}
           layout={useTopNav ? 'top' : 'sidebar'}
+          transparent={isFullscreenHero}
         />
       )}
       {}
@@ -117,7 +135,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               : { xs: `${spacing.mainPaddingX.mobile}px`, md: `${spacing.mainPaddingX.desktop}px` },
           }}
         >
-          {!isImmersive && <Toolbar />}
+          {!isImmersive && !isFullscreenHero && <Toolbar />}
           <Box sx={isImmersive ? { flex: 1, height: '100dvh', minHeight: 0 } : { flexGrow: 1 }}>
             <Fade in timeout={400} key={location.pathname}>
               <Box
@@ -128,12 +146,16 @@ export function MainLayout({ children }: MainLayoutProps) {
               >
                 {children}
               </Box>
+
             </Fade>
+
           </Box>
+
           {!isImmersive && <Footer />}
         </Box>
+
       </Box>
-      {!isImmersive && <Live2DWidget />}
     </Box>
+
   );
 }

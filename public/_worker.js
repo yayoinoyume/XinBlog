@@ -472,6 +472,8 @@ function makeAgentSessionId() {
 
 const WEB_SEARCH_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+
+
 function extractAnchors(html, className) {
   const out = [];
   const classRe = new RegExp(`(?:^|\\s)${className}(?:\\s|$)`);
@@ -486,6 +488,8 @@ function extractAnchors(html, className) {
   }
   return out;
 }
+
+
 function parseDdgHtml(html, maxResults) {
   const anchors = extractAnchors(html, 'result__a');
   const snippets = extractAnchors(html, 'result__snippet');
@@ -502,6 +506,8 @@ function parseDdgHtml(html, maxResults) {
   }
   return results;
 }
+
+
 function parseDdgLite(html, maxResults) {
   const s = String(html || '');
   const links = extractAnchors(s, 'result-link');
@@ -519,6 +525,8 @@ function parseDdgLite(html, maxResults) {
   }
   return results;
 }
+
+
 function pickXmlTag(block, tag) {
   const m = String(block || '').match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`));
   if (!m) return '';
@@ -527,6 +535,8 @@ function pickXmlTag(block, tag) {
   if (cdata) v = cdata[1];
   return v.trim();
 }
+
+
 function parseBingRss(xml, maxResults) {
   const results = [];
   for (const it of String(xml || '').matchAll(/<item>([\s\S]*?)<\/item>/g)) {
@@ -542,9 +552,11 @@ function parseBingRss(xml, maxResults) {
   }
   return results;
 }
+
 async function agentWebSearch(query, maxResults = 5) {
   const q = String(query || '').trim();
   if (!q) return { ok: false, error: '缺少搜索关键词' };
+  
   const endpoints = [
     { url: 'https://www.bing.com/search?format=rss&count=10&q=' + encodeURIComponent(q), parse: parseBingRss },
     { url: 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(q), parse: parseDdgHtml },
@@ -571,6 +583,21 @@ async function agentWebSearch(query, maxResults = 5) {
     ok: false,
     error: '没有找到相关结果，可尝试换关键词' + (lastErr ? `（${lastErr}）` : ''),
   };
+}
+
+
+function resolveDdgUrl(u) {
+  const s = String(u || '');
+  try {
+    const parsed = new URL(s, 'https://duckduckgo.com');
+    const uddg = parsed.searchParams.get('uddg');
+    if (uddg) return uddg;
+  } catch {
+    
+  }
+  if (/^\/\//.test(s)) return 'https:' + s;
+  if (/^https?:\/\//i.test(s)) return s;
+  return '';
 }
 
 function isBindingError(err) {
@@ -828,11 +855,6 @@ const defaultSiteConfig = {
     title: '',
     subtitle: '',
     badge: '',
-    layout: {
-      cols: 6,
-      gap: 16,
-      widgets: [],
-    },
   },
   about: {
     name: '',
@@ -844,20 +866,6 @@ const defaultSiteConfig = {
     activeFontId: '',
     fonts: [],
     fallback: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-  },
-  live2d: {
-    enabled: false,
-    position: 'right',
-    width: 280,
-    height: 280,
-    tools: ['hitokoto', 'asteroids', 'switch-model', 'switch-texture', 'photo', 'info', 'quit'],
-    drag: false,
-    showToggleAfterQuit: true,
-    logLevel: 'warn',
-    waifuPath: '/live2d/waifu-tips.json',
-    cdnPath: '/live2d-models/',
-    cubism2Path: '/live2d/live2d.min.js',
-    cubism5Path: 'https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js',
   },
   nav: {
     items: [],
@@ -1211,6 +1219,19 @@ async function ensureRateLimitTable(env) {
   rateLimitTableReady = true;
 }
 
+
+
+
+
+let refreshJtiTableReady = false;
+async function ensureRefreshJtiTable(env) {
+  if (refreshJtiTableReady) return;
+  await env.DB_USERS.prepare(
+    'CREATE TABLE IF NOT EXISTS refresh_token_jtis (jti TEXT PRIMARY KEY, user_id TEXT, consumed INTEGER NOT NULL DEFAULT 0, created_at TEXT)'
+  ).run();
+  refreshJtiTableReady = true;
+}
+
 function getClientIp(request) {
   return (
     request.headers.get('CF-Connecting-IP') ||
@@ -1373,19 +1394,26 @@ async function login(request, env) {
   if (!valid) return jsonResponse(401, null, '用户名或密码错误');
 
   const nowSec = Math.floor(Date.now() / 1000);
+  await ensureRefreshJtiTable(env);
   const accessToken = await signJWT(
     { sub: user.id, username: user.username, role: user.role, type: 'access', iat: nowSec, exp: nowSec + 48 * 3600 },
     env.JWT_SECRET
   );
+  
+  const refreshJti = crypto.randomUUID();
+  const refreshExp = nowSec + 30 * 24 * 3600;
   const refreshToken = await signJWT(
-    { sub: user.id, type: 'refresh', iat: nowSec, exp: nowSec + 7 * 24 * 3600 },
+    { sub: user.id, type: 'refresh', jti: refreshJti, iat: nowSec, exp: refreshExp },
     env.JWT_SECRET
   );
 
   const tokenHash = await sha256Hex(refreshToken);
-  const expiresAt = new Date((nowSec + 7 * 24 * 3600) * 1000).toISOString();
+  const expiresAt = new Date(refreshExp * 1000).toISOString();
   await env.DB_USERS.prepare('INSERT INTO refresh_tokens (user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?)')
     .bind(user.id, tokenHash, expiresAt, now())
+    .run();
+  await env.DB_USERS.prepare('INSERT INTO refresh_token_jtis (jti, user_id, consumed, created_at) VALUES (?, ?, 0, ?)')
+    .bind(refreshJti, user.id, now())
     .run();
 
   return jsonResponse(0, {
@@ -1406,6 +1434,15 @@ async function refreshToken(request, env) {
   const refreshToken = String(body.refreshToken || '');
   if (!refreshToken) return jsonResponse(400, null, 'Refresh token required');
 
+  // 建表失败不应等同于「token 无效」：把 D1 瞬时抖动降级为跳过重用检测，
+  // 仍按 token_hash 正常校验，避免误把有效会话登出。
+  let jtiReady = true;
+  try {
+    await ensureRefreshJtiTable(env);
+  } catch {
+    jtiReady = false;
+  }
+
   try {
     const payload = await verifyJWT(refreshToken, env.JWT_SECRET);
     if (payload.type !== 'refresh') throw new Error('Invalid token type');
@@ -1414,7 +1451,19 @@ async function refreshToken(request, env) {
     const row = await env.DB_USERS.prepare('SELECT id, user_id, expires_at FROM refresh_tokens WHERE token_hash = ?')
       .bind(tokenHash)
       .first();
-    if (!row) return jsonResponse(401, null, 'Refresh token invalid');
+
+    
+    
+    if (!row) {
+      const used = jtiReady && payload.jti
+        ? await env.DB_USERS.prepare('SELECT consumed FROM refresh_token_jtis WHERE jti = ?').bind(payload.jti).first()
+        : null;
+      if (used && used.consumed === 1) {
+        await env.DB_USERS.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').bind(payload.sub).run();
+        return jsonResponse(401, null, 'Refresh token reuse detected, all sessions revoked');
+      }
+      return jsonResponse(401, null, 'Refresh token invalid');
+    }
 
     const user = await env.DB_USERS.prepare(
       'SELECT id, username, email, avatar_base64, role, status FROM users WHERE id = ?'
@@ -1431,9 +1480,13 @@ async function refreshToken(request, env) {
 
     
     await env.DB_USERS.prepare('DELETE FROM refresh_tokens WHERE token_hash = ?').bind(tokenHash).run();
+    if (jtiReady && payload.jti) {
+      await env.DB_USERS.prepare('UPDATE refresh_token_jtis SET consumed = 1 WHERE jti = ?').bind(payload.jti).run();
+    }
+    const newRefreshJti = crypto.randomUUID();
     const refreshExpSec = nowSec + 30 * 24 * 3600;
     const newRefreshToken = await signJWT(
-      { sub: user.id, type: 'refresh', iat: nowSec, exp: refreshExpSec },
+      { sub: user.id, type: 'refresh', jti: newRefreshJti, iat: nowSec, exp: refreshExpSec },
       env.JWT_SECRET
     );
     const newRefreshTokenHash = await sha256Hex(newRefreshToken);
@@ -1442,6 +1495,11 @@ async function refreshToken(request, env) {
     )
       .bind(newRefreshTokenHash, user.id, new Date(refreshExpSec * 1000).toISOString())
       .run();
+    if (jtiReady) {
+      await env.DB_USERS.prepare('INSERT INTO refresh_token_jtis (jti, user_id, consumed, created_at) VALUES (?, ?, 0, ?)')
+        .bind(newRefreshJti, user.id, now())
+        .run();
+    }
 
     return jsonResponse(0, {
       accessToken,
@@ -8790,6 +8848,28 @@ export default {
       if (method === 'GET' && path === '/api/v1/ai/v1/models') return await openaiModels(request, env);
       if (method === 'POST' && path === '/api/v1/ai/v1/chat/completions') return await openaiChatCompletions(request, env);
       if (method === 'POST' && path === '/api/v1/ai/v1/embeddings') return await openaiEmbeddings(request, env);
+
+      
+      if (method === 'GET' && path.startsWith('/s/')) {
+        const code = path.slice('/s/'.length).split('/')[0];
+        if (code) {
+          try {
+            const slug = base64UrlDecode(code);
+            if (/^[\w-]+$/.test(slug)) {
+              return new Response(null, {
+                status: 302,
+                headers: {
+                  Location: `/post/${slug}`,
+                  'Cache-Control': 'public, max-age=300',
+                },
+              });
+            }
+          } catch {
+            
+          }
+        }
+        return jsonResponse(404, null, '短链不存在', 404);
+      }
 
       
       if (env.ASSETS) {

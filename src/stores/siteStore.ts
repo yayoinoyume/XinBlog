@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { apiGet, apiPatch } from '@/api/client';
 import { themePresets } from '@/types/theme';
 import { defaultCardTheme } from '@/utils/postCardTheme';
-import type { SiteConfig, SiteFontConfig, SiteCursorConfig, Live2dConfig, ClickEffectConfig, MusicPlayerConfig } from '@/types';
+import type { SiteConfig, SiteFontConfig, SiteCursorConfig, ClickEffectConfig, MusicPlayerConfig } from '@/types';
 
 const defaultPreset = themePresets.find((p) => p.id === 'ocean') || themePresets[0];
 
@@ -25,24 +25,6 @@ const DEFAULT_CLICK_EFFECT_CONFIG: Required<ClickEffectConfig> = {
   customColor: '',
   textList: ['❤富强❤', '❤民主❤', '❤文明❤', '❤和谐❤', '❤自由❤', '❤平等❤', '❤公正❤', '❤法治❤'],
   intensity: 'medium',
-};
-
-const DEFAULT_LIVE2D_CONFIG: Live2dConfig = {
-  enabled: false,
-  mobileEnabled: true,
-  position: 'right',
-  width: 280,
-  height: 280,
-  tools: ['hitokoto', 'asteroids', 'switch-model', 'switch-texture', 'photo', 'info', 'quit'],
-  drag: false,
-  showToggleAfterQuit: true,
-  logLevel: 'warn',
-  modelSource: 'cdn',
-  customCdn: '',
-  waifuPath: '/live2d/waifu-tips.json',
-  cdnPath: '/live2d-models/',
-  cubism2Path: '/live2d/live2d.min.js',
-  cubism5Path: 'https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js',
 };
 
 const DEFAULT_MUSIC_CONFIG: MusicPlayerConfig = {
@@ -94,11 +76,6 @@ const defaultConfig: SiteConfig = {
     title: '',
     subtitle: '',
     badge: '',
-    layout: {
-      cols: 6,
-      gap: 16,
-      widgets: [],
-    },
   },
   about: {
     subtitle: '',
@@ -117,7 +94,6 @@ const defaultConfig: SiteConfig = {
   font: { ...DEFAULT_FONT_CONFIG },
   cursor: { ...DEFAULT_CURSOR_CONFIG },
   clickEffect: { ...DEFAULT_CLICK_EFFECT_CONFIG },
-  live2d: { ...DEFAULT_LIVE2D_CONFIG },
   music: { ...DEFAULT_MUSIC_CONFIG },
   nav: {
     items: [],
@@ -181,22 +157,6 @@ function normalizeClickEffectConfig(clickEffect: SiteConfig['clickEffect']): typ
   };
 }
 
-function normalizeLive2dConfig(live2d: SiteConfig['live2d']): Live2dConfig {
-  if (!live2d) return { ...DEFAULT_LIVE2D_CONFIG };
-  return {
-    ...DEFAULT_LIVE2D_CONFIG,
-    ...live2d,
-    
-    waifuPath: DEFAULT_LIVE2D_CONFIG.waifuPath,
-    cdnPath: DEFAULT_LIVE2D_CONFIG.cdnPath,
-    cubism2Path: DEFAULT_LIVE2D_CONFIG.cubism2Path,
-    cubism5Path: DEFAULT_LIVE2D_CONFIG.cubism5Path,
-    modelSource: live2d.modelSource || DEFAULT_LIVE2D_CONFIG.modelSource,
-    mobileEnabled: typeof live2d.mobileEnabled === 'boolean' ? live2d.mobileEnabled : DEFAULT_LIVE2D_CONFIG.mobileEnabled,
-    tools: Array.isArray(live2d.tools) && live2d.tools.length > 0 ? live2d.tools : DEFAULT_LIVE2D_CONFIG.tools,
-  };
-}
-
 function normalizeMusicConfig(music: SiteConfig['music']): MusicPlayerConfig {
   if (!music || typeof music !== 'object') return { ...DEFAULT_MUSIC_CONFIG };
   return {
@@ -219,14 +179,21 @@ function normalizeMusicConfig(music: SiteConfig['music']): MusicPlayerConfig {
   };
 }
 
+function normalizeHeroConfig(hero?: SiteConfig['hero']): SiteConfig['hero'] {
+  const base = hero || {};
+  const mode = base.mode === 'fullscreen' || base.mode === 'classic' ? base.mode : 'fullscreen';
+  const { layout: _legacyLayout, ...rest } = base as SiteConfig['hero'] & { layout?: unknown };
+  void _legacyLayout;
+  return { ...rest, mode };
+}
 export function normalizeSiteConfig(config: SiteConfig): SiteConfig {
   return {
     ...config,
     font: normalizeFontConfig(config.font),
     cursor: normalizeCursorConfig(config.cursor),
     clickEffect: normalizeClickEffectConfig(config.clickEffect),
-    live2d: normalizeLive2dConfig(config.live2d),
     music: normalizeMusicConfig(config.music),
+    hero: normalizeHeroConfig(config.hero),
   };
 }
 

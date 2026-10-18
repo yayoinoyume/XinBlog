@@ -284,7 +284,7 @@ export function useMusicPlayer(config?: Partial<MusicPlayerConfig>): MusicPlayer
     void loadPlaylist();
   }, [loadPlaylist, playlistId, apiUrl]);
 
-  
+
   // 站点配置可能晚于挂载到达，配置变化时同步音量/播放模式（初始快照不会自动更新）。
   // 取舍：直接覆盖，包含上一次会话的 memory 恢复值；此后本会话手动调整不再被覆盖。
   useEffect(() => {
