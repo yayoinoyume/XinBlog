@@ -344,7 +344,7 @@ export interface NavThemeConfig {
 }
 
 export interface NavConfig {
-  /** 导航栏布局：sidebar=侧边栏，top=顶部标签栏。上游新增。 */
+  /** 导航栏布局：sidebar=侧边栏，top=顶部标签栏。 */
   layout?: 'sidebar' | 'top';
   items: NavItemConfig[];
   theme?: NavThemeConfig;
@@ -357,33 +357,16 @@ export interface SiteThemeConfig {
   borderRadius?: number;
 }
 
-export interface HeroWidgetConfig {
-  id: string;
-  type: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  props?: Record<string, unknown>;
-  hideOnMobile?: boolean;
-}
-
-export interface HeroLayout {
-  cols: number;
-  gap: number;
-  widgets: HeroWidgetConfig[];
-}
-
 export interface HeroConfig {
   enabled?: boolean;
-  mode?: 'classic' | 'bento';
+  
+  mode?: 'classic' | 'fullscreen';
   backgroundImage?: string;
   backgroundColor?: string;
   useCustomUrl?: boolean;
   title?: string;
   subtitle?: string;
   badge?: string;
-  layout?: HeroLayout;
 }
 
 export interface SocialLink {

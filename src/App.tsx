@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ThemeProvider, CssBaseline, GlobalStyles, alpha } from '@mui/material';
 import { RouterProvider } from 'react-router-dom';
 import { useAppTheme } from '@/theme';
@@ -11,6 +11,7 @@ import { SceneThemeEffects } from '@/themes/scene';
 import { ClickEffect } from '@/components/ClickEffect';
 import { GlobalMusicPlayer } from '@/components/MusicPlayer/GlobalMusicPlayer';
 import { MusicPlayerProvider } from '@/components/MusicPlayer/MusicPlayerContext';
+import { Loading } from '@/components/Common/Loading';
 import { DISABLE_CONTEXT_MENU } from '@/config';
 
 function GlobalScrollbarStyles() {
@@ -58,6 +59,7 @@ function GlobalScrollbarStyles() {
 function App() {
   const theme = useAppTheme();
   const music = useSiteStore((s) => s.config.music);
+  const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
     const state = useThemeConfigStore.getState();
@@ -65,15 +67,13 @@ function App() {
       useThemeConfigStore.setState({ borderRadius: 16 });
     }
     
-    useSiteStore
-      .getState()
-      .loadConfig()
-      .then(() => {
-        // theme/ui 的 loadConfig 内部无 I/O（同步读 siteStore.config 后 set），
-        // 必须保持 site → theme → ui 顺序，禁止改成 Promise.all
-        void useThemeConfigStore.getState().loadConfig();
-        void useUIStore.getState().loadConfig();
-      });
+    const init = async () => {
+      await useSiteStore.getState().loadConfig();
+      await useThemeConfigStore.getState().loadConfig();
+      await useUIStore.getState().loadConfig();
+      setInitialized(true);
+    };
+    init();
   }, []);
 
   useEffect(() => {
@@ -89,44 +89,18 @@ function App() {
 
   
   useEffect(() => {
-    let timer: number | undefined;
-
-    const scheduleRefresh = () => {
-      window.clearTimeout(timer);
-      const { isAuthenticated, token, refresh } = useAuthStore.getState();
-      if (!isAuthenticated || !token) return;
-
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        if (!payload.exp) return;
-
-        const expiresAt = payload.exp * 1000;
-        const refreshAt = expiresAt - 5 * 60 * 1000; 
-        const delay = refreshAt - Date.now();
-
-        if (delay <= 0) {
-          refresh();
-        } else {
-          timer = window.setTimeout(() => refresh(), delay);
-        }
-      } catch {
-        
-      }
+    const tick = () => {
+      void useAuthStore.getState().ensureSession();
     };
-
-    scheduleRefresh();
-    const unsubscribe = useAuthStore.subscribe((state, prevState) => {
-      if (state.isAuthenticated && !prevState.isAuthenticated) {
-        scheduleRefresh();
-      }
-      if (!state.isAuthenticated && prevState.isAuthenticated) {
-        window.clearTimeout(timer);
-      }
-    });
-
+    tick();
+    const interval = window.setInterval(tick, 60 * 1000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
-      window.clearTimeout(timer);
-      unsubscribe();
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
 
@@ -136,10 +110,15 @@ function App() {
       <GlobalScrollbarStyles />
       <SceneThemeEffects />
       <ClickEffect />
-      <MusicPlayerProvider config={music}>
-        <RouterProvider router={router} />
-        <GlobalMusicPlayer />
-      </MusicPlayerProvider>
+      {initialized ? (
+        <MusicPlayerProvider config={music}>
+          <RouterProvider router={router} />
+          <GlobalMusicPlayer />
+        </MusicPlayerProvider>
+
+      ) : (
+        <Loading fullScreen text="正在加载站点配置..." />
+      )}
     </ThemeProvider>
 
   );

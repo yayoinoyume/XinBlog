@@ -110,27 +110,27 @@ interface CustomRequestInit extends RequestInit {
   _retry?: boolean;
 }
 
-async function refreshAccessToken(): Promise<boolean> {
-  if (typeof window === 'undefined') return false;
+let inflightRefresh: Promise<boolean> | null = null;
+
+function readStoredRefreshToken(): string | undefined {
   try {
     const raw = localStorage.getItem('auth-state');
-    if (!raw) return false;
-    const persisted = JSON.parse(raw);
-    const refreshToken = persisted?.state?.refreshToken;
-    if (!refreshToken) return false;
+    return raw ? (JSON.parse(raw) as { state?: { refreshToken?: string } }).state?.refreshToken : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
+
+async function doRefreshOnce(refreshToken: string): Promise<boolean> {
+  try {
     const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
     });
     const data = (await res.json()) as { code: number; data?: { accessToken: string; refreshToken: string; user: AuthUser }; msg?: string };
-    if (data.code !== 0 || !data.data) {
-      
-      const { useAuthStore } = await import('@/stores/authStore');
-      useAuthStore.getState().logout();
-      return false;
-    }
+    if (data.code !== 0 || !data.data) return false;
 
     const { accessToken, refreshToken: newRefreshToken, user } = data.data;
     const newState = { state: { isAuthenticated: true, user, token: accessToken, refreshToken: newRefreshToken }, version: 0 };
@@ -146,6 +146,39 @@ async function refreshAccessToken(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function refreshAccessToken(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  if (inflightRefresh) return inflightRefresh;
+  inflightRefresh = (async () => {
+    try {
+      const startToken = readStoredRefreshToken();
+      if (!startToken) {
+        const { useAuthStore } = await import('@/stores/authStore');
+        useAuthStore.getState().logout();
+        return false;
+      }
+
+
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const token = readStoredRefreshToken();
+        if (!token) break;
+        if (await doRefreshOnce(token)) return true;
+
+        const fresh = readStoredRefreshToken();
+        if (!fresh || fresh === token) break;
+      }
+      const { useAuthStore } = await import('@/stores/authStore');
+      useAuthStore.getState().logout();
+      return false;
+    } catch {
+      return false;
+    } finally {
+      inflightRefresh = null;
+    }
+  })();
+  return inflightRefresh;
 }
 
 async function fetchInternal<T = unknown>(path: string, options: RequestInit): Promise<ApiResult<T>> {

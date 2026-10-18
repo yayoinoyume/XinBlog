@@ -517,7 +517,6 @@ function PostCardBase({ post, theme, forcedLayout, height, index }: PostCardProp
 }
 
 export const PostCard = memo(PostCardBase);
-
 export function PostCardSkeleton() {
   const { config } = useSiteStore();
   const cardPadding = resolveSpacingConfig(config.spacing).cardPaddingY;

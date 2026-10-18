@@ -32,6 +32,7 @@ export function PostDetailFooter({ post, siblings, preview = false }: PostDetail
         <LikeButton slug={post.slug} preview={preview} />
         <ShareButtons
           title={post.title}
+          slug={post.slug}
           url={preview ? `${window.location.origin}/post/${post.slug}` : undefined}
         />
       </Box>

@@ -35,6 +35,9 @@ coverage
 # 本地备份目录（.bak 时间戳快照，不入库）
 .backups
 
+# 第三方 Live2D 看板娘模型（体积大且非本项目源码，需自行放入 public/live2d-models/）
+public/live2d-models/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

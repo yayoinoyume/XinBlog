@@ -94,11 +94,6 @@ const defaultConfig: SiteConfig = {
     title: '',
     subtitle: '',
     badge: '',
-    layout: {
-      cols: 6,
-      gap: 16,
-      widgets: [],
-    },
   },
   about: {
     subtitle: '',
@@ -219,6 +214,13 @@ function normalizeMusicConfig(music: SiteConfig['music']): MusicPlayerConfig {
   };
 }
 
+function normalizeHeroConfig(hero?: SiteConfig['hero']): SiteConfig['hero'] {
+  const base = hero || {};
+  const mode = base.mode === 'fullscreen' || base.mode === 'classic' ? base.mode : 'fullscreen';
+  const { layout: _legacyLayout, ...rest } = base as SiteConfig['hero'] & { layout?: unknown };
+  void _legacyLayout;
+  return { ...rest, mode };
+}
 export function normalizeSiteConfig(config: SiteConfig): SiteConfig {
   return {
     ...config,
@@ -227,6 +229,7 @@ export function normalizeSiteConfig(config: SiteConfig): SiteConfig {
     clickEffect: normalizeClickEffectConfig(config.clickEffect),
     live2d: normalizeLive2dConfig(config.live2d),
     music: normalizeMusicConfig(config.music),
+    hero: normalizeHeroConfig(config.hero),
   };
 }
 

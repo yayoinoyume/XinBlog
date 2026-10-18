@@ -2,7 +2,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import { Box, Fade, alpha, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { KeyboardArrowUp } from '@mui/icons-material';
+import { KeyboardArrowUp, Edit as EditIcon, Comment as CommentIcon } from '@mui/icons-material';
 import { fetchPostBySlug, fetchPosts, transformPost, type PostsResponse } from '@/api/posts';
 import { peekCache } from '@/api/client';
 import { Loading } from '@/components/Common/Loading';
@@ -14,6 +14,7 @@ import {
 import { useSiteStore } from '@/stores/siteStore';
 import { smoothScrollTo } from '@/utils/smoothScrollController';
 import type { Post } from '@/types';
+import { AdminFrameFab } from '@/components/Admin/AdminFrameFab';
 
 function getScrollContainer(): HTMLElement | null {
   return document.querySelector('main') as HTMLElement | null;
@@ -30,6 +31,7 @@ export function PostDetail() {
   const [siblings, setSiblings] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [headings, setHeadings] = useState<HeadingItem[]>([]);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!slug) return;
@@ -65,7 +67,7 @@ export function PostDetail() {
       setLoading(false);
     });
     return () => { mounted = false; };
-  }, [slug]);
+  }, [slug, reloadKey]);
 
   if (!loading && !post) {
     return <Navigate to="/404" replace />;
@@ -100,6 +102,26 @@ export function PostDetail() {
 
         {(!isGlassTheme || isMobile) && <TableOfContents headings={headings} />}
         <ReadingProgressButton />
+        {}
+        {post && (
+          <>
+            <AdminFrameFab
+              adminPath={`/admin/posts?edit=${post.id}&embed=1`}
+              label="编辑"
+              icon={<EditIcon />}
+              bottomOffset={72}
+              onSaved={() => setReloadKey((k) => k + 1)}
+            />
+            <AdminFrameFab
+              adminPath="/admin/comments?embed=1"
+              label="管理评论"
+              icon={<CommentIcon />}
+              bottomOffset={136}
+              onSaved={() => window.location.reload()}
+            />
+          </>
+
+        )}
       </Box>
 
     </Fade>
