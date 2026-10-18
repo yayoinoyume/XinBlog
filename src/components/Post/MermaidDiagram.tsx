@@ -25,14 +25,17 @@ export function MermaidDiagram({ source }: MermaidDiagramProps) {
         mountAsync(el, source, {
           zoom: { labels: { zoomIn: '放大', zoomOut: '缩小', reset: '还原' } },
           linkRel: 'noopener noreferrer',
+          // 图表里的图片会发起真实外链请求（可用于追踪），博客用不到就关掉
+          images: false,
         })
       )
       .then((m) => {
         if (cancelled) m.destroy();
         else mounted = m;
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         // 加载失败时保留原始源码，避免整篇文章白屏
+        console.warn('[mermaid] 渲染失败，已回退为源码：', error);
         if (!cancelled) el.textContent = source;
       });
 
@@ -61,6 +64,12 @@ export function MermaidDiagram({ source }: MermaidDiagramProps) {
         '--pele-critical': (t) => t.palette.error.main,
         '--pele-error': (t) => t.palette.error.main,
         '--pele-radius': '6px',
+        // 图表系列色（饼图、雷达、git 分支等）用主题调色板，随明暗模式变化
+        ...Object.fromEntries(
+          (['primary', 'secondary', 'error', 'warning', 'info', 'success', 'primary', 'secondary'] as const).map(
+            (name, i) => [`--pele-series-${i + 1}`, (t) => t.palette[name].main]
+          )
+        ),
         '& svg': { margin: '0 auto' },
       }}
     />

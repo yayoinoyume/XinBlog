@@ -9,7 +9,7 @@
     "compile": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node --test mcp/server.test.mjs"
+    "test": "node --test mcp/server.test.mjs src/utils/mermaidBlock.test.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
@@ -33,6 +33,7 @@
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
+    "unified": "^11.0.5",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
