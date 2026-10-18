@@ -64,11 +64,21 @@ export function MermaidDiagram({ source }: MermaidDiagramProps) {
         '--pele-critical': (t) => t.palette.error.main,
         '--pele-error': (t) => t.palette.error.main,
         '--pele-radius': '6px',
-        // 图表系列色（饼图、雷达、git 分支等）用主题调色板，随明暗模式变化
+        // 图表系列色（饼图、雷达、git 分支等）用主题调色板，随明暗模式变化。
+        // 8 个位置取 6 个色相 + 2 个变体，避免 7/8 与 1/2 同色。
         ...Object.fromEntries(
-          (['primary', 'secondary', 'error', 'warning', 'info', 'success', 'primary', 'secondary'] as const).map(
-            (name, i) => [`--pele-series-${i + 1}`, (t) => t.palette[name].main]
-          )
+          (
+            [
+              ['primary', 'main'],
+              ['secondary', 'main'],
+              ['error', 'main'],
+              ['warning', 'main'],
+              ['info', 'main'],
+              ['success', 'main'],
+              ['primary', 'light'],
+              ['secondary', 'dark'],
+            ] as const
+          ).map(([name, tone], i) => [`--pele-series-${i + 1}`, (t) => t.palette[name][tone]])
         ),
         '& svg': { margin: '0 auto' },
       }}

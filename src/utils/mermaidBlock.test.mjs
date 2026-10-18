@@ -24,6 +24,11 @@ test('多个 className 时仍能识别', () => {
   assert.equal(mermaidSource([code('hljs language-mermaid', 'graph TD;A-->B')]), 'graph TD;A-->B');
 });
 
+test('className 只是包含 mermaid 子串时不算（按空格分词精确匹配）', () => {
+  assert.equal(mermaidSource([code('language-mermaid2', 'graph TD;A-->B')]), null);
+  assert.equal(mermaidSource([code('not-language-mermaid', 'graph TD;A-->B')]), null);
+});
+
 test('子节点是嵌套 span（高亮后的普通代码块）时返回 null', () => {
   const highlighted = code('hljs language-js', [h('span', { key: 'k', className: 'hljs-keyword' }, 'const'), ' a = 1;']);
   assert.equal(mermaidSource([highlighted]), null);
