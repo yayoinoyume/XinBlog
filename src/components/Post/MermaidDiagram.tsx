@@ -30,12 +30,23 @@ export function MermaidDiagram({ source }: MermaidDiagramProps) {
         })
       )
       .then((m) => {
-        if (cancelled) m.destroy();
-        else mounted = m;
+        if (cancelled) {
+          m.destroy();
+          return;
+        }
+        mounted = m;
+        // mountAsync 解析失败时不 reject，而是把错误写进容器。此时退回源码，
+        // 总比给读者看一行英文 Parse error 强。
+        if (m.error) {
+          console.warn('[mermaid] 渲染失败，已回退为源码：', m.error);
+          m.destroy();
+          mounted = undefined;
+          el.textContent = source;
+        }
       })
       .catch((error: unknown) => {
-        // 加载失败时保留原始源码，避免整篇文章白屏
-        console.warn('[mermaid] 渲染失败，已回退为源码：', error);
+        // 只有模块加载失败（网络、分包缺失）才会走到这里
+        console.warn('[mermaid] 加载失败，已回退为源码：', error);
         if (!cancelled) el.textContent = source;
       });
 
