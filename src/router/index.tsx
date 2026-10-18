@@ -1,6 +1,4 @@
-
-
-
+/* eslint-disable react-refresh/only-export-components */
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { MainLayout } from '@/components/Frame/MainLayout';
