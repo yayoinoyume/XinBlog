@@ -16,6 +16,7 @@ import type { PostLayoutMode } from '@/stores/uiStore';
 import { toAbsoluteCloudUrl } from '@/config';
 import { getBase64Size, compressImage } from '@/utils/image';
 
+const PWA_THEME_COLOR_DEFAULT = '#0f111a';
 const MAX_HERO_IMAGE_SIZE = 500 * 1024;
 const MAX_ICON_SIZE = 100 * 1024;
 const MAX_SHARE_IMAGE_SIZE = 100 * 1024;
@@ -268,7 +269,7 @@ export function useAppearanceEditor() {
   const [backgroundBlur, setBackgroundBlur] = useState(site.config.backgroundBlur ?? 0);
   const [paginationMode, setPaginationMode] = useState<PaginationMode>(site.config.paginationMode || 'load-more');
   const [pageSize, setPageSize] = useState(site.config.pageSize ?? 9);
-  const [pwaThemeColor, setPwaThemeColor] = useState(site.config.pwaThemeColor || '#ffffff');
+  const [pwaThemeColor, setPwaThemeColor] = useState(site.config.pwaThemeColor || PWA_THEME_COLOR_DEFAULT);
 
   
   const hero = site.config.hero || {};
@@ -313,7 +314,7 @@ export function useAppearanceEditor() {
     setBackgroundBlur(c.backgroundBlur ?? 0);
     setPaginationMode(c.paginationMode || 'load-more');
     setPageSize(c.pageSize ?? 9);
-    setPwaThemeColor(c.pwaThemeColor || '#ffffff');
+    setPwaThemeColor(c.pwaThemeColor || PWA_THEME_COLOR_DEFAULT);
     const heroCfg = c.hero || {};
     setHeroTitle(heroCfg.title ?? '');
     setHeroSubtitle(heroCfg.subtitle ?? '');
@@ -378,7 +379,7 @@ export function useAppearanceEditor() {
     if (backgroundBlur !== (site.config.backgroundBlur ?? 0)) return true;
     if (paginationMode !== (site.config.paginationMode || 'load-more')) return true;
     if (pageSize !== (site.config.pageSize ?? 9)) return true;
-    if (pwaThemeColor !== (site.config.pwaThemeColor || '#ffffff')) return true;
+    if (pwaThemeColor !== (site.config.pwaThemeColor || PWA_THEME_COLOR_DEFAULT)) return true;
 
     if (heroTitle !== (currentHero.title ?? '')) return true;
     if (heroSubtitle !== (currentHero.subtitle ?? '')) return true;
@@ -687,7 +688,7 @@ export function useAppearanceEditor() {
       setBackgroundBlur(sc.backgroundBlur ?? 0);
       setPaginationMode(sc.paginationMode || 'load-more');
       setPageSize(sc.pageSize ?? 9);
-      setPwaThemeColor(sc.pwaThemeColor || '#ffffff');
+      setPwaThemeColor(sc.pwaThemeColor || PWA_THEME_COLOR_DEFAULT);
       const savedHero = sc.hero || {};
       setHeroTitle(savedHero.title ?? '');
       setHeroSubtitle(savedHero.subtitle ?? '');

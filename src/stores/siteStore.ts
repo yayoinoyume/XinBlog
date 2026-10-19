@@ -49,7 +49,7 @@ const defaultConfig: SiteConfig = {
   shareDescription: 'XinBlog - 一个记录生活、设计与技术感悟的个人博客',
   shareImage: '',
   themeColor: '#5b7cfa',
-  pwaThemeColor: '#ffffff',
+  pwaThemeColor: '#0f111a',
   language: 'zh-CN',
   postLayout: 'grid',
   footerText: '',

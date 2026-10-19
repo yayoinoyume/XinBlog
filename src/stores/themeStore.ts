@@ -1,28 +1,10 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+
+type ThemeMode = 'light' | 'dark';
 
 interface ThemeState {
-  mode: 'light' | 'dark';
-  toggleMode: () => void;
-  setMode: (mode: 'light' | 'dark') => void;
+  mode: ThemeMode;
 }
 
-export const useThemeStore = create<ThemeState>()(
-  persist(
-    (set) => ({
-      mode: (() => {
-        if (typeof window !== 'undefined') {
-          const stored = localStorage.getItem('theme-mode');
-          if (stored === 'light' || stored === 'dark') return stored;
-          return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        }
-        return 'light';
-      })(),
-      toggleMode: () => set((state) => ({ mode: state.mode === 'light' ? 'dark' : 'light' })),
-      setMode: (mode) => set({ mode }),
-    }),
-    {
-      name: 'theme-mode',
-    }
-  )
-);
+// 站点仅支持深色模式：浅色效果不达标，暂不提供切换
+export const useThemeStore = create<ThemeState>()(() => ({ mode: 'dark' }));

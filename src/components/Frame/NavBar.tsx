@@ -20,7 +20,6 @@ import { LogoutConfirmDialog } from '@/components/Common/LogoutConfirmDialog';
 import { Menu as MenuIcon, Person, Search, Settings, AccountCircle, Logout, ArrowBack } from '@mui/icons-material';
 import { useState, useEffect, type RefObject } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { ThemeToggle } from '@/components/Common/ThemeToggle';
 import { NavLinks } from '@/components/Frame/NavLinks';
 import { TopNavTabs } from '@/components/Frame/TopNavTabs';
 import { AnimatedMenuButton } from '@/components/Frame/AnimatedMenuButton';
@@ -325,10 +324,6 @@ export function NavBar({
             </IconButton>
 
           </Tooltip>
-
-          <Box sx={{ color: navTheme.textColor || 'inherit' }}>
-            <ThemeToggle />
-          </Box>
 
 
           {isAuthenticated && user ? (
