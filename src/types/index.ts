@@ -245,6 +245,10 @@ export interface SiteConfig {
   disableSmoothScroll?: boolean;
   
   agentEnabled?: boolean;
+  /** 留言墙入口开关（由 /api/v1/site 下发，避免单独请求 settings/message-wall） */
+  messageWallEnabled?: boolean;
+  /** 聊天室入口开关（由 /api/v1/site 下发，避免单独请求 settings/chat） */
+  chatEnabled?: boolean;
   
   imageDisplayMode?: 'fixed' | 'natural';
   

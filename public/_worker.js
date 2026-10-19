@@ -908,7 +908,9 @@ const defaultFriendsConfig = {
 };
 
 async function getSiteConfigObject(env) {
-  const s = await getSettingsBatch(env, ['site', 'hero', 'about', 'friends', 'ai', 'active_theme']);
+  // message_wall / chat 只取 enabled 开关，与上面同一张表同一个 SQL，不增加查询次数。
+  // 前端据此渲染导航入口，省掉每次访问两个独立请求（每次省 2 次 Worker 额度）。
+  const s = await getSettingsBatch(env, ['site', 'hero', 'about', 'friends', 'ai', 'active_theme', 'message_wall', 'chat']);
   const site = s.site || {};
   const hero = s.hero || {};
   const about = s.about || {};
@@ -929,6 +931,9 @@ async function getSiteConfigObject(env) {
     about: { ...defaultSiteConfig.about, ...about, ...(site.about || {}) },
     friends: { ...defaultFriendsConfig, ...friends, ...(site.friends || {}) },
     font: { ...defaultSiteConfig.font, ...(site.font || {}) },
+    // 与 getMessageWallSettings/getChatSettings 的默认值语义一致：缺省即 false
+    messageWallEnabled: s.message_wall?.enabled === true,
+    chatEnabled: s.chat?.enabled === true,
   };
 }
 
@@ -994,49 +999,6 @@ function injectSiteMeta(html, config, requestUrl, post, env) {
   ].join('\n');
 
   return html.replace(/<head>/i, () => `<head>\n${metaTags}`);
-}
-
-async function getManifest(env, requestUrl) {
-  try {
-    const config = await getSiteConfigObject(env).catch(() => ({ ...defaultSiteConfig }));
-    const origin = new URL(requestUrl).origin;
-    const name = config.siteName || 'XinBlog';
-    const shortName = name.length > 12 ? `${name.slice(0, 11)}…` : name;
-
-    let iconSrc = config.logo || config.favicon || '/logo.png';
-    if (iconSrc && !iconSrc.startsWith('http') && !iconSrc.startsWith('data:')) {
-      iconSrc = origin + (iconSrc.startsWith('/') ? '' : '/') + iconSrc;
-    }
-
-    const manifest = {
-      name,
-      short_name: shortName,
-      description: config.shareDescription || 'XinBlog - 记录生活，分享热爱',
-      start_url: '/',
-      display: 'standalone',
-      background_color: config.pwaThemeColor || '#ffffff',
-      theme_color: config.pwaThemeColor || '#ffffff',
-      lang: config.language || 'zh-CN',
-      icons: [
-        { src: iconSrc, sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-        { src: iconSrc, sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
-      ],
-    };
-
-    return new Response(JSON.stringify(manifest), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/manifest+json; charset=utf-8',
-        'Cache-Control': 'public, max-age=120, stale-while-revalidate=86400',
-      },
-    });
-  } catch (err) {
-    console.error('生成 manifest 失败:', err);
-    return new Response(JSON.stringify({ error: 'manifest generation failed' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
 }
 
 function xmlEscape(str) {
@@ -8645,7 +8607,6 @@ export default {
 
       
       if (method === 'GET' && path === '/api/v1/site') return await getSiteConfig(env);
-      if (method === 'GET' && path === '/manifest.json') return await getManifest(env, request.url);
       if (method === 'GET' && path === '/api/v1/posts') return await listPosts(env, url);
 
       

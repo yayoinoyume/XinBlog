@@ -1,0 +1,24 @@
+{
+  "name": "心象蜃気楼",
+  "short_name": "心象蜃気楼",
+  "description": "心を透写した世界で、僕らは居場所を探した",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "https://oss.yayoi.love/blog/image/20260904212338976.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://oss.yayoi.love/blog/image/20260904212338976.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

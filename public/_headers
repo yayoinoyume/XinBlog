@@ -1,0 +1,11 @@
+# /assets/* 下的文件名全部带内容哈希（Vite 产物），内容一变文件名就变，
+# 因此可以永久缓存。原先 max-age=14400 + must-revalidate 会让回访用户
+# 每 4 小时对 36 个 JS 文件各发一次条件请求。
+#
+# 注意：只能对 /assets/* 设 immutable。
+# /sw.js、/logo.png、/manifest.json 文件名不带哈希，设了会导致永远拿不到更新，
+# 其中 /sw.js 尤其致命（Service Worker 永远不升级）。故这些路径一律不在此文件出现。
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+  # 显式保留跨域头，避免覆盖 Pages 默认的 ACAO:* 导致 crossorigin 模块加载失败
+  Access-Control-Allow-Origin: *

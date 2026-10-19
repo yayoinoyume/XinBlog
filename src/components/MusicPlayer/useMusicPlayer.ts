@@ -60,7 +60,11 @@ export function useMusicPlayer(config?: Partial<MusicPlayerConfig>): MusicPlayer
   ctxRef.current = { config: effective, playMode, currentIndex, playlist, volume };
 
   
+  // 音乐功能关闭时不要创建 <audio>：原实现无条件 new Audio() + preload='auto'
+  // 并挂到 document.body，即使 config.enabled=false 也会留下一个空 audio 元素，
+  // 且注册 7 个监听器。改为仅在 enabled 时才创建。
   useEffect(() => {
+    if (!effective.enabled) return;
     const audio = new Audio();
     audio.preload = 'auto';
     audioRef.current = audio;
@@ -151,7 +155,7 @@ export function useMusicPlayer(config?: Partial<MusicPlayerConfig>): MusicPlayer
       audioRef.current = null;
     };
     
-  }, []);
+  }, [effective.enabled]);
 
   
   const lyricsRef = useRef<LyricLine[]>([]);

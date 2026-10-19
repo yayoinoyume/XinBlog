@@ -149,8 +149,7 @@ export function Home() {
   };
 
   return (
-    <Fade in timeout={400}>
-      <Box>
+    <Box>
         {config.hero?.mode === 'fullscreen' ? (
           <HeroFullscreen hero={config.hero} />
         ) : (
@@ -497,8 +496,6 @@ export function Home() {
         <AdminFrameFab adminPath="/admin/media?embed=1" label="管理媒体" icon={<PermMediaIcon />} bottomOffset={128} />
         <AdminFrameFab adminPath="/admin/tags?embed=1" label="管理标签" icon={<LabelIcon />} bottomOffset={192} />
       </Box>
-
-    </Fade>
 
   );
 }

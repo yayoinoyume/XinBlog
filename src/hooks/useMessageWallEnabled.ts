@@ -1,20 +1,9 @@
-import { useEffect, useState } from 'react';
-import { getMessageWallSettings } from '@/api/messages';
+import { useSiteStore } from '@/stores/siteStore';
 
-
+/**
+ * 留言墙开关来自 /api/v1/site 响应（messageWallEnabled / chatEnabled）。
+ * 原实现每次挂载都请求 /api/v1/settings/message-wall，一次页面访问白烧 1 次 Worker 额度。
+ */
 export function useMessageWallEnabled() {
-  const [enabled, setEnabled] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    getMessageWallSettings().then((res) => {
-      if (cancelled) return;
-      if (res.code === 0 && res.data) setEnabled(res.data.enabled);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return enabled;
+  return useSiteStore((s) => s.config.messageWallEnabled === true);
 }
