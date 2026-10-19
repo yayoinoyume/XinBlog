@@ -5,7 +5,6 @@
     "/assets/*",
     "/logo.png",
     "/favicon.ico",
-    "/manifest.json",
     "/*.js",
     "/*.css",
     "/*.png",

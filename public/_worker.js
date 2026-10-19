@@ -1001,6 +1001,51 @@ function injectSiteMeta(html, config, requestUrl, post, env) {
   return html.replace(/<head>/i, () => `<head>\n${metaTags}`);
 }
 
+async function getManifest(env, requestUrl) {
+  try {
+    const config = await getSiteConfigObject(env).catch(() => ({ ...defaultSiteConfig }));
+    const origin = new URL(requestUrl).origin;
+    const name = config.siteName || 'XinBlog';
+    const shortName = name.length > 12 ? `${name.slice(0, 11)}…` : name;
+
+    let iconSrc = config.logo || config.favicon || '/logo.png';
+    if (iconSrc && !iconSrc.startsWith('http') && !iconSrc.startsWith('data:')) {
+      iconSrc = origin + (iconSrc.startsWith('/') ? '' : '/') + iconSrc;
+    }
+
+    const manifest = {
+      name,
+      short_name: shortName,
+      description: config.shareDescription || 'XinBlog - 记录生活，分享热爱',
+      start_url: '/',
+      display: 'standalone',
+      background_color: config.pwaThemeColor || '#ffffff',
+      theme_color: config.pwaThemeColor || '#ffffff',
+      lang: config.language || 'zh-CN',
+      icons: [
+        { src: iconSrc, sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+        { src: iconSrc, sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+      ],
+    };
+
+    return new Response(JSON.stringify(manifest), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/manifest+json; charset=utf-8',
+        // s-maxage 让 Cloudflare 边缘缓存 1 天：命中时请求不进 Worker，不消耗额度。
+        // max-age=120 保留给浏览器，站名/图标改动最多 2 分钟内生效。
+        'Cache-Control': 'public, max-age=120, s-maxage=86400, stale-while-revalidate=86400',
+      },
+    });
+  } catch (err) {
+    console.error('生成 manifest 失败:', err);
+    return new Response(JSON.stringify({ error: 'manifest generation failed' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+}
+
 function xmlEscape(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -8607,6 +8652,7 @@ export default {
 
       
       if (method === 'GET' && path === '/api/v1/site') return await getSiteConfig(env);
+      if (method === 'GET' && path === '/manifest.json') return await getManifest(env, request.url);
       if (method === 'GET' && path === '/api/v1/posts') return await listPosts(env, url);
 
       
