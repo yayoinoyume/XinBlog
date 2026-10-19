@@ -7,6 +7,7 @@ import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import 'highlight.js/styles/github.css';
 import 'katex/dist/katex.min.css';
 import React, { Children, isValidElement, useEffect, useMemo, useRef, useState } from 'react';
+import type { PluggableList, Plugin } from 'unified';
 import type { Components } from 'react-markdown';
 import { useThemeStore } from '@/stores/themeStore';
 import { useSiteStore } from '@/stores/siteStore';
@@ -14,6 +15,8 @@ import { resolveSpacingConfig } from '@/utils/spacingConfig';
 
 import { ImageLightbox } from '@/components/Common/ImageLightbox';
 import { LazyImage } from '@/components/Common/LazyImage';
+import { MermaidDiagram } from './MermaidDiagram';
+import { mermaidSource } from '@/utils/mermaidBlock';
 import type { HeadingItem } from './TableOfContents';
 
 interface PostContentProps {
@@ -51,21 +54,18 @@ function slugify(text: string): string {
 
 
 function useHeadingIds() {
-  const seenRef = useRef<Record<string, number>>({});
-
-  
-  seenRef.current = {};
+  // 每次渲染重置计数，供本轮标题去重
+  const seen = new Map<string, number>();
 
   return {
     getId: (text: string, level: number) => {
       const base = `toc-heading-${level}-${slugify(text)}`;
-      const count = seenRef.current[base] || 0;
-      seenRef.current[base] = count + 1;
+      const count = seen.get(base) || 0;
+      seen.set(base, count + 1);
       return count === 0 ? base : `${base}-${count}`;
     },
   };
 }
-
 function extractHeadings(root: HTMLElement | null): HeadingItem[] {
   if (!root) return [];
   const elements = root.querySelectorAll('h1, h2, h3, h4, h5, h6');
@@ -97,9 +97,12 @@ function useHighlightTheme() {
   }, [mode]);
 }
 
+// ```mermaid 代码块交给 pele 渲染，其余代码块保留复制按钮
 function PreBlock({ children }: { children?: React.ReactNode }) {
   const [copied, setCopied] = useState(false);
   const preRef = useRef<HTMLPreElement>(null);
+  const mermaid = mermaidSource(children);
+  if (mermaid !== null) return <MermaidDiagram source={mermaid} />;
 
   const handleCopy = async () => {
     
@@ -111,7 +114,7 @@ function PreBlock({ children }: { children?: React.ReactNode }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      
+      // 剪贴板不可用（非 https 或用户拒绝授权）时静默失败
     }
   };
 
@@ -208,29 +211,30 @@ export function PostContent({ content, onHeadingsExtracted }: PostContentProps) 
     };
   }, [enableLatex]);
 
-  const remarkPlugins = useMemo(() => {
-    const plugins = [remarkGfm];
+  const remarkPlugins = useMemo<PluggableList>(() => {
+    const plugins: PluggableList = [remarkGfm];
     if (latexPlugins?.remarkMath) {
       
-      plugins.push([latexPlugins.remarkMath, {
+      plugins.push([latexPlugins.remarkMath as Plugin, {
         inlineMath: [['$', '$'], ['\\(', '\\)']],
         displayMath: [['$$', '$$'], ['\\[', '\\]']]
-      }] as any);
+      }]);
     }
     return plugins;
   }, [latexPlugins]);
 
-  const rehypePlugins = useMemo(() => {
-    const plugins: any[] = [];
+  const rehypePlugins = useMemo<PluggableList>(() => {
+    const plugins: PluggableList = [];
     if (latexPlugins?.rehypeKatex) {
-      plugins.push([latexPlugins.rehypeKatex, { output: 'html' }]);
+      plugins.push([latexPlugins.rehypeKatex as Plugin, { output: 'html' }]);
     }
     if (sanitizeSchema) {
       plugins.push([rehypeSanitize, sanitizeSchema]);
     } else {
       plugins.push(rehypeSanitize);
     }
-    plugins.push(rehypeHighlight);
+    // mermaid 代码块交给 pele，不走语法高亮
+    plugins.push([rehypeHighlight, { plainText: ['mermaid'] }]);
     return plugins;
   }, [latexPlugins, sanitizeSchema]);
 
@@ -261,6 +265,7 @@ export function PostContent({ content, onHeadingsExtracted }: PostContentProps) 
 
     );
     
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 键是 h1..h6 的动态下标
     (headingComponents as any)[Tag] = Heading;
   });
 
