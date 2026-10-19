@@ -834,7 +834,7 @@ const defaultSiteConfig = {
   shareDescription: 'XinBlog - 一个记录生活、设计与技术感悟的个人博客',
   shareImage: '',
   themeColor: '#5b7cfa',
-  pwaThemeColor: '#ffffff',
+  pwaThemeColor: '#0f111a',
   language: 'zh-CN',
   postLayout: 'grid',
   footerText: '',
@@ -957,7 +957,7 @@ function injectSiteMeta(html, config, requestUrl, post, env) {
   const title = escapeHtmlMeta(post && post.title ? post.title : (config.siteName || 'XinBlog'));
   const descriptionRaw = post && post.excerpt ? post.excerpt : (config.shareDescription || '');
   const description = escapeHtmlMeta(truncateMeta(descriptionRaw, 200)); // §5.3，先截断后转义
-  const themeColor = escapeHtmlMeta(config.pwaThemeColor || '#ffffff');
+  const themeColor = escapeHtmlMeta(config.pwaThemeColor || '#0f111a');
   const origin = new URL(requestUrl).origin;
 
   let image = '';
@@ -1019,8 +1019,8 @@ async function getManifest(env, requestUrl) {
       description: config.shareDescription || 'XinBlog - 记录生活，分享热爱',
       start_url: '/',
       display: 'standalone',
-      background_color: config.pwaThemeColor || '#ffffff',
-      theme_color: config.pwaThemeColor || '#ffffff',
+      background_color: config.pwaThemeColor || '#0f111a',
+      theme_color: config.pwaThemeColor || '#0f111a',
       lang: config.language || 'zh-CN',
       icons: [
         { src: iconSrc, sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
