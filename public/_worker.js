@@ -1032,8 +1032,8 @@ async function getManifest(env, requestUrl) {
       status: 200,
       headers: {
         'Content-Type': 'application/manifest+json; charset=utf-8',
-        // s-maxage 让 Cloudflare 边缘缓存 1 天：命中时请求不进 Worker，不消耗额度。
-        // max-age=120 保留给浏览器，站名/图标改动最多 2 分钟内生效。
+        // s-maxage 让 Cloudflare 边缘缓存生效（max-age 只作用于浏览器）。
+        // 注意：边缘命中仍按标准费率计入 Worker 请求额度，只降 CPU 与 D1 读取。
         'Cache-Control': 'public, max-age=120, s-maxage=86400, stale-while-revalidate=86400',
       },
     });
@@ -1109,7 +1109,9 @@ async function getSiteConfig(env) {
   
   try {
     const config = await getSiteConfigObject(env);
-    return jsonResponseWithCache(0, { site: config }, 'ok', 200, 'public, max-age=120, stale-while-revalidate=86400');
+    // s-maxage 让 Cloudflare 边缘缓存生效（max-age 只作用于浏览器）。
+    // 注意：这仍会消耗 Worker 请求额度，只降 CPU 与 D1 读取。
+    return jsonResponseWithCache(0, { site: config }, 'ok', 200, 'public, max-age=120, s-maxage=120, stale-while-revalidate=86400');
   } catch (err) {
     if (isBindingError(err)) {
       console.error('读取站点配置失败，返回默认配置:', err);
@@ -1161,7 +1163,7 @@ async function listPosts(env, url) {
 
   
   const list = await fillPostTags(env, posts.results || []);
-  return jsonResponseWithCache(0, { list, total, page, limit }, 'ok', 200, 'public, max-age=600');
+  return jsonResponseWithCache(0, { list, total, page, limit }, 'ok', 200, 'public, max-age=600, s-maxage=600');
 }
 
 async function fillPostTags(env, posts) {
@@ -1206,7 +1208,7 @@ async function listTags(env) {
      LEFT JOIN posts p ON pt.post_id = p.id AND p.status = 'published'
      GROUP BY t.id`
   ).all();
-  return jsonResponseWithCache(0, tags.results || [], 'ok', 200, 'public, max-age=600');
+  return jsonResponseWithCache(0, tags.results || [], 'ok', 200, 'public, max-age=600, s-maxage=600');
 }
 
 async function listPostsByTag(env, path) {
