@@ -241,7 +241,7 @@ export function Home() {
                 )}
                 {config.hero?.subtitle && (
                   <Typography
-                    variant="h5"
+                    variant="body1" component="p"
                     color="text.secondary"
                     sx={{ fontWeight: 400, lineHeight: 1.6, mb: 4, fontSize: { xs: '1rem', sm: '1.25rem', md: '1.5rem' }, overflowWrap: 'break-word' }}
                   >

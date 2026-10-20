@@ -493,18 +493,52 @@ interface SiteState {
   saveConfig: (config: Partial<SiteConfig>) => Promise<boolean>;
 }
 
-// 模块初始化时同步读取本地缓存，让首帧直接使用上次的布局/分页配置；
-// 网络配置回来后再静默更新，避免默认配置先渲染、随后整体跳变。
+type BootstrapConfig = {
+  heroMode?: 'classic' | 'fullscreen';
+  navLayout?: 'sidebar' | 'top';
+  postLayout?: 'grid' | 'list' | 'magazine';
+  pageSize?: number;
+};
+
+function getBootstrapConfig(): BootstrapConfig | null {
+  if (typeof window === 'undefined') return null;
+  const value = (window as Window & { __XINBLOG_BOOTSTRAP__?: BootstrapConfig }).__XINBLOG_BOOTSTRAP__;
+  return value && typeof value === 'object' ? value : null;
+}
+
+function mergeBootstrapConfig(base: SiteConfig, bootstrap: BootstrapConfig | null): SiteConfig {
+  if (!bootstrap) return base;
+  return {
+    ...base,
+    hero: {
+      ...base.hero,
+      mode: bootstrap.heroMode === 'fullscreen' ? 'fullscreen' : base.hero?.mode,
+    },
+    nav: {
+      ...(base.nav || { items: [] }),
+      layout: bootstrap.navLayout === 'top' ? 'top' : base.nav?.layout,
+    },
+    postLayout: bootstrap.postLayout || base.postLayout,
+    pageSize: bootstrap.pageSize || base.pageSize,
+  };
+}
+
+// Worker 会在 HTML 首包注入关键布局快照，使冷启动首帧就使用真实布局；
+// localStorage 作为后备，网络配置回来后再静默校正。
+const initialBootstrapConfig = getBootstrapConfig();
 const initialCachedConfig = getCachedSiteConfig();
-let initialConfig = defaultConfig;
-let initialLoaded = false;
+let initialConfig = mergeBootstrapConfig(defaultConfig, initialBootstrapConfig);
+let initialLoaded = Boolean(initialBootstrapConfig);
 if (initialCachedConfig && typeof initialCachedConfig === 'object') {
   try {
-    initialConfig = normalizeSiteConfig({ ...defaultConfig, ...initialCachedConfig });
+    initialConfig = mergeBootstrapConfig(
+      normalizeSiteConfig({ ...defaultConfig, ...initialCachedConfig }),
+      initialBootstrapConfig,
+    );
     initialLoaded = true;
   } catch {
     // localStorage 可被旧版本/扩展写入非预期结构；损坏时回退默认配置，不能白屏。
-    initialConfig = defaultConfig;
+    initialConfig = mergeBootstrapConfig(defaultConfig, initialBootstrapConfig);
   }
 }
 

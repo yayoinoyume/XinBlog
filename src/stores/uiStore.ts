@@ -23,7 +23,7 @@ export const useUIStore = create<UIState>()(
       sidebarCollapsed: false,
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
-      postLayout: 'grid',
+      postLayout: useSiteStore.getState().config.postLayout || 'grid',
       setPostLayout: (layout) => set({ postLayout: layout }),
       adminNavHidden: false,
       setAdminNavHidden: (hidden) => set({ adminNavHidden: hidden }),

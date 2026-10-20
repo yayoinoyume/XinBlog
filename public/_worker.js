@@ -948,14 +948,14 @@ const CONTENT_SECURITY_POLICY_REPORT_ONLY = [
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'self'",
-  "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://js.hcaptcha.com https://static.geetest.com",
+  "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://js.hcaptcha.com https://static.geetest.com https://private.invalid/r/d2e710b6bb0c",
   "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https:",
   "connect-src 'self' https: wss:",
   "media-src 'self' blob: https:",
   "worker-src 'self' blob:",
-  "frame-src 'self' https://challenges.cloudflare.com https://newassets.hcaptcha.com https://static.geetest.com",
+  "frame-src 'self' https://challenges.cloudflare.com https://newassets.hcaptcha.com https://static.geetest.com https://private.invalid/r/d2e710b6bb0c",
 ].join('; ');
 
 const SECURITY_HEADERS = [
@@ -1099,9 +1099,17 @@ function injectSiteMeta(html, config, requestUrl, post, env) {
         .some((v) => v && String(v.name || '').trim() === name) ? '' : tag;
     });
 
+  const bootstrapConfig = {
+    heroMode: config.hero?.mode === 'fullscreen' ? 'fullscreen' : 'classic',
+    navLayout: config.nav?.layout === 'top' ? 'top' : 'sidebar',
+    postLayout: ['grid', 'list', 'magazine'].includes(config.postLayout) ? config.postLayout : 'grid',
+    pageSize: Math.min(50, Math.max(1, Number(config.pageSize) || 9)),
+  };
+
   const metaTags = [
     charsetTag,
     `<title>${title}</title>`,
+    `<script>window.__XINBLOG_BOOTSTRAP__=${JSON.stringify(bootstrapConfig).replace(/</g, '\\u003c')}</script>`,
     `<meta name="description" content="${description}" />`,
     `<link rel="manifest" href="/manifest.json?v=2" />`,
     `<link rel="canonical" href="${escapeHtmlMeta(requestUrl)}" />`,

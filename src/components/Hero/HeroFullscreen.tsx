@@ -104,7 +104,7 @@ export const HeroFullscreen = forwardRef<HTMLDivElement, { hero?: HeroConfig }>(
             )}
             {hero?.subtitle && (
               <Typography
-                variant="h5"
+                variant="body1" component="p"
                 sx={{
                   fontWeight: 400,
                   lineHeight: 1.6,
