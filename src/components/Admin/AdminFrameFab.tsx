@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Fab, Tooltip } from '@mui/material';
 import { useAuthStore } from '@/stores/authStore';
 import { isContentAdmin, isSuperAdmin } from '@/utils/permission';
-import { AdminFrameModal } from './AdminFrameModal';
+const AdminFrameModal = lazy(() => import('./AdminFrameModal').then((m) => ({ default: m.AdminFrameModal })));
 
 interface AdminFrameFabProps {
   
@@ -47,13 +47,17 @@ export function AdminFrameFab({
 
       </Tooltip>
 
-      <AdminFrameModal
-        open={open}
-        src={adminPath}
-        onClose={() => setOpen(false)}
-        onSaved={onSaved}
-        title={label}
-      />
+      {open && (
+        <Suspense fallback={null}>
+          <AdminFrameModal
+            open
+            src={adminPath}
+            onClose={() => setOpen(false)}
+            onSaved={onSaved}
+            title={label}
+          />
+        </Suspense>
+      )}
     </>
 
   );
