@@ -9,3 +9,9 @@
   Cache-Control: public, max-age=31536000, immutable
   # 显式保留跨域头，避免覆盖 Pages 默认的 ACAO:* 导致 crossorigin 模块加载失败
   Access-Control-Allow-Origin: *
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(self), camera=(self)
+  Content-Security-Policy-Report-Only: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://js.hcaptcha.com https://static.geetest.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; media-src 'self' blob: https:; worker-src 'self' blob:; frame-src 'self' https://challenges.cloudflare.com https://newassets.hcaptcha.com https://static.geetest.com

@@ -38,5 +38,25 @@ export default defineConfig({
   build: {
     outDir: OUT_DIR,
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // 把会被大量页面共享的依赖收成少量稳定包，减少首屏 HTTP 往返。
+        // 业务页面仍由路由级 dynamic import 懒加载，不进入 vendor。
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (
+            id.includes('/react/') ||
+            id.includes('/react-dom/') ||
+            id.includes('/react-router') ||
+            id.includes('/scheduler/')
+          ) {
+            return 'react-vendor'
+          }
+          if (id.includes('/@mui/') || id.includes('/@emotion/')) {
+            return 'mui-vendor'
+          }
+        },
+      },
+    },
   },
 })

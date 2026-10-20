@@ -8,7 +8,6 @@ import {
   Skeleton,
   ButtonBase,
   alpha,
-  Fade,
 } from '@mui/material';
 import { AccessTime, Visibility } from '@mui/icons-material';
 import { Link } from 'react-router-dom';
@@ -128,7 +127,7 @@ function PostCardBase({ post, theme, forcedLayout, height, index }: PostCardProp
     
     if (output.book) {
       return (
-        <Fade in timeout={300} style={{ width: '100%', height: '100%' }}>
+        <Box className="post-card-enter-motion" sx={{ width: '100%', height: '100%' }}>
           <ButtonBase component={Link} to={`/post/${post.slug}`} sx={{ width: '100%', height: '100%', display: 'block', textAlign: 'left', borderRadius: 1 }}>
             <Paper elevation={0} sx={rootSx}>
               <Box sx={output.book.root}>
@@ -169,13 +168,13 @@ function PostCardBase({ post, theme, forcedLayout, height, index }: PostCardProp
 
           </ButtonBase>
 
-        </Fade>
+        </Box>
 
       );
     }
 
     return (
-      <Fade in timeout={300} style={{ width: '100%', height: '100%' }}>
+      <Box className="post-card-enter-motion" sx={{ width: '100%', height: '100%' }}>
         <ButtonBase
           component={Link}
           to={`/post/${post.slug}`}
@@ -254,7 +253,7 @@ function PostCardBase({ post, theme, forcedLayout, height, index }: PostCardProp
 
         </ButtonBase>
 
-      </Fade>
+      </Box>
 
     );
   }
@@ -264,7 +263,7 @@ function PostCardBase({ post, theme, forcedLayout, height, index }: PostCardProp
     
     if (output?.book) {
       return (
-        <Fade in timeout={300} style={{ width: '100%', height: '100%' }}>
+        <Box className="post-card-enter-motion" sx={{ width: '100%', height: '100%' }}>
           <ButtonBase component={Link} to={`/post/${post.slug}`} sx={{ width: '100%', height: '100%', display: 'block', textAlign: 'left', borderRadius: 1 }}>
             <Paper
               elevation={0}
@@ -318,14 +317,14 @@ function PostCardBase({ post, theme, forcedLayout, height, index }: PostCardProp
 
           </ButtonBase>
 
-        </Fade>
+        </Box>
 
       );
     }
 
     
     return (
-      <Fade in timeout={300} style={{ width: '100%', height: '100%' }}>
+      <Box className="post-card-enter-motion" sx={{ width: '100%', height: '100%' }}>
         <ButtonBase component={Link} to={`/post/${post.slug}`} sx={{
             width: '100%',
             height: '100%',
@@ -415,13 +414,13 @@ function PostCardBase({ post, theme, forcedLayout, height, index }: PostCardProp
 
         </ButtonBase>
 
-      </Fade>
+      </Box>
 
     );
   }
 
   return (
-    <Fade in timeout={300} style={{ width: '100%', height: '100%' }}>
+    <Box className="post-card-enter-motion" sx={{ width: '100%', height: '100%' }}>
       <ButtonBase component={Link} to={`/post/${post.slug}`} sx={{
             width: '100%',
             height: '100%',
@@ -511,7 +510,7 @@ function PostCardBase({ post, theme, forcedLayout, height, index }: PostCardProp
 
       </ButtonBase>
 
-    </Fade>
+    </Box>
 
   );
 }
