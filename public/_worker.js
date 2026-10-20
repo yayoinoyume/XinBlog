@@ -947,7 +947,7 @@ const CONTENT_SECURITY_POLICY_REPORT_ONLY = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
-  "frame-ancestors 'none'",
+  "frame-ancestors 'self'",
   "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://js.hcaptcha.com https://static.geetest.com",
   "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com",
   "img-src 'self' data: blob: https:",
@@ -959,7 +959,7 @@ const CONTENT_SECURITY_POLICY_REPORT_ONLY = [
 ].join('; ');
 
 const SECURITY_HEADERS = [
-  ['X-Frame-Options', 'DENY'],
+  ['X-Frame-Options', 'SAMEORIGIN'],
   ['X-Content-Type-Options', 'nosniff'],
   ['Referrer-Policy', 'strict-origin-when-cross-origin'],
   ['Permissions-Policy', 'geolocation=(), microphone=(self), camera=(self)'],
@@ -985,8 +985,8 @@ function withSecurityHeadersOnResponse(res) {
   });
 }
 
-function textResponse(body, contentType, cacheControl = 'public, max-age=3600') {
-  return new Response(body, {
+function textResponse(body, contentType, cacheControl = 'public, max-age=3600', head = false) {
+  return new Response(head ? null : body, {
     status: 200,
     headers: withSecurityHeaders({
       'Content-Type': contentType,
@@ -995,7 +995,7 @@ function textResponse(body, contentType, cacheControl = 'public, max-age=3600') 
   });
 }
 
-async function serveLlmsTxt(env, url) {
+async function serveLlmsTxt(env, url, head = false) {
   const config = await getSiteConfigObject(env).catch(() => ({ ...defaultSiteConfig }));
   const siteName = String(config.siteName || 'XinBlog').trim() || 'XinBlog';
   const description = String(config.shareDescription || '').trim();
@@ -1029,10 +1029,10 @@ async function serveLlmsTxt(env, url) {
       if (excerpt) lines.push(`  ${excerpt}`);
     }
   }
-  return textResponse(lines.join('\n') + '\n', 'text/plain; charset=utf-8', 'public, max-age=300, s-maxage=3600');
+  return textResponse(lines.join('\n') + '\n', 'text/plain; charset=utf-8', 'public, max-age=300, s-maxage=3600', head);
 }
 
-async function serveAiCatalog(env, url) {
+async function serveAiCatalog(env, url, head = false) {
   const config = await getSiteConfigObject(env).catch(() => ({ ...defaultSiteConfig }));
   const origin = url.origin;
   const catalog = {
@@ -1044,7 +1044,7 @@ async function serveAiCatalog(env, url) {
     llms: origin + '/llms.txt',
     language: config.language || 'zh-CN',
   };
-  return textResponse(JSON.stringify(catalog, null, 2) + '\n', 'application/json; charset=utf-8', 'public, max-age=300, s-maxage=3600');
+  return textResponse(JSON.stringify(catalog, null, 2) + '\n', 'application/json; charset=utf-8', 'public, max-age=300, s-maxage=3600', head);
 }
 
 function escapeHtmlMeta(text) {
@@ -1079,8 +1079,10 @@ function injectSiteMeta(html, config, requestUrl, post, env) {
   if (!image) image = resolveAbsoluteImage('/logo.png', origin);
   image = escapeHtmlMeta(rewriteOgImage(image, origin, env));
 
-  // 先删掉静态入口里的默认标签，再统一注入一次。否则每次 Worker 注入都会
-  // 叠加一份 description/theme-color/manifest/og/twitter，造成重复 meta。
+  // 只删除本函数会重新生成的标签；viewport/字符集/验证标签等必须保留。
+  // charset 单独提取到 head 最前，满足 HTML 规范的 1024 字节早声明要求。
+  const charsetTag = (html.match(/<meta\s+charset=[^>]*>/i) || [])[0] || '';
+  if (charsetTag) html = html.replace(charsetTag, '');
   html = html
     .replace(/<title>.*?<\/title>/i, '')
     .replace(/<meta\s+name=["']description["'][^>]*>/gi, '')
@@ -1090,12 +1092,12 @@ function injectSiteMeta(html, config, requestUrl, post, env) {
     .replace(/<meta\s+(?:property|name)=["'](?:og|twitter):[^"']+["'][^>]*>/gi, '')
     .replace(/<meta\s+name=["'][^"']+["'][^>]*>/gi, (tag) => {
       const name = (tag.match(/name=["']([^"']+)["']/i) || [])[1] || '';
-      const verified = (Array.isArray(config.seoVerifications) ? config.seoVerifications : [])
-        .some((v) => v && String(v.name || '').trim() === name);
-      return verified ? tag : '';
+      return (Array.isArray(config.seoVerifications) ? config.seoVerifications : [])
+        .some((v) => v && String(v.name || '').trim() === name) ? '' : tag;
     });
 
   const metaTags = [
+    charsetTag,
     `<title>${title}</title>`,
     `<meta name="description" content="${description}" />`,
     `<link rel="manifest" href="/manifest.json?v=2" />`,
@@ -8760,8 +8762,8 @@ async function fetchWorkerResponse(request, env, ctx) {
       
       if ((method === 'GET' || method === 'HEAD') && path === '/sitemap.xml') return await serveSitemap(env, url);
       if ((method === 'GET' || method === 'HEAD') && path === '/robots.txt') return serveRobots(url);
-      if ((method === 'GET' || method === 'HEAD') && path === '/llms.txt') return await serveLlmsTxt(env, url);
-      if ((method === 'GET' || method === 'HEAD') && path === '/ai-catalog.json') return await serveAiCatalog(env, url);
+      if ((method === 'GET' || method === 'HEAD') && path === '/llms.txt') return await serveLlmsTxt(env, url, method === 'HEAD');
+      if ((method === 'GET' || method === 'HEAD') && path === '/ai-catalog.json') return await serveAiCatalog(env, url, method === 'HEAD');
 
       
       if (method === 'GET' && path === '/v1/models') return await openaiModels(request, env);

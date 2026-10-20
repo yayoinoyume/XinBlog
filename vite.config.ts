@@ -52,8 +52,15 @@ export default defineConfig({
           ) {
             return 'react-vendor'
           }
-          if (id.includes('/@mui/') || id.includes('/@emotion/')) {
-            return 'mui-vendor'
+          if (id.includes('/@emotion/')) return 'mui-vendor'
+          // 只合并入口必需、且解构导入的 MUI 核心组件；列表、弹窗、菜单、
+          // 图标和后台专用组件继续按路由懒加载，避免把未用代码提进首屏。
+          if (id.includes('/@mui/material/')) {
+            const entryComponents = [
+              '/AppBar/', '/Box/', '/Button/', '/CssBaseline/', '/GlobalStyles/',
+              '/Link/', '/Paper/', '/Typography/', '/styles/', '/colors.js',
+            ]
+            if (entryComponents.some((part) => id.includes(part))) return 'mui-vendor'
           }
         },
       },

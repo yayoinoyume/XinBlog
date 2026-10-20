@@ -9,7 +9,8 @@
     "compile": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node --test mcp/server.test.mjs src/utils/mermaidBlock.test.mjs"
+    "test": "node --test mcp/server.test.mjs src/utils/mermaidBlock.test.mjs test-worker-helpers.mjs",
+    "test:worker": "node --test test-worker-helpers.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
