@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { ThemeProvider, CssBaseline, GlobalStyles, alpha } from '@mui/material';
 import { RouterProvider } from 'react-router-dom';
 import { useAppTheme } from '@/theme';
@@ -11,7 +11,6 @@ import { SceneThemeEffects } from '@/themes/scene';
 import { ClickEffect } from '@/components/ClickEffect';
 import { GlobalMusicPlayer } from '@/components/MusicPlayer/GlobalMusicPlayer';
 import { MusicPlayerProvider } from '@/components/MusicPlayer/MusicPlayerContext';
-import { Loading } from '@/components/Common/Loading';
 import { DISABLE_CONTEXT_MENU } from '@/config';
 
 function GlobalScrollbarStyles() {
@@ -51,6 +50,18 @@ function GlobalScrollbarStyles() {
                 : alpha(theme.palette.common.white, 0.3),
           },
         },
+        '@keyframes post-card-enter': {
+          from: { opacity: 0, transform: 'translateY(6px)' },
+          to: { opacity: 1, transform: 'translateY(0)' },
+        },
+        '.post-card-enter-motion': {
+          animation: 'post-card-enter 300ms ease both',
+        },
+        '@media (prefers-reduced-motion: reduce)': {
+          '.post-card-enter-motion': {
+            animation: 'none !important',
+          },
+        },
       })}
     />
   );
@@ -59,7 +70,6 @@ function GlobalScrollbarStyles() {
 function App() {
   const theme = useAppTheme();
   const music = useSiteStore((s) => s.config.music);
-  const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
     const state = useThemeConfigStore.getState();
@@ -67,13 +77,19 @@ function App() {
       useThemeConfigStore.setState({ borderRadius: 16 });
     }
     
-    const init = async () => {
-      await useSiteStore.getState().loadConfig();
-      await useThemeConfigStore.getState().loadConfig();
-      await useUIStore.getState().loadConfig();
-      setInitialized(true);
-    };
-    init();
+    // 站点、主题、布局配置都有本地持久化/默认值。首屏不应等待网络才渲染：
+    // 先用当前状态立即开门，配置回来后由各 store 的订阅自动更新。
+    void useSiteStore
+      .getState()
+      .loadConfig()
+      .then(() => {
+        // theme/ui 的 loadConfig 只读取 siteStore，无网络 I/O；保持顺序即可。
+        void useThemeConfigStore.getState().loadConfig();
+        void useUIStore.getState().loadConfig();
+      })
+      .catch(() => {
+        // 站点配置失败时仍保留本地缓存/默认配置，页面不要被异常状态挂住。
+      });
   }, []);
 
   useEffect(() => {
@@ -110,15 +126,10 @@ function App() {
       <GlobalScrollbarStyles />
       <SceneThemeEffects />
       <ClickEffect />
-      {initialized ? (
-        <MusicPlayerProvider config={music}>
-          <RouterProvider router={router} />
-          <GlobalMusicPlayer />
-        </MusicPlayerProvider>
-
-      ) : (
-        <Loading fullScreen text="正在加载站点配置..." />
-      )}
+      <MusicPlayerProvider config={music}>
+        <RouterProvider router={router} />
+        <GlobalMusicPlayer />
+      </MusicPlayerProvider>
     </ThemeProvider>
 
   );

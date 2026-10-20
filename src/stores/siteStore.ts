@@ -209,7 +209,7 @@ function getCachedSiteConfig(): SiteConfig | null {
       }
     }
   } catch {
-    
+    // 缓存损坏或 localStorage 被禁用时回退默认配置。
   }
   return null;
 }
@@ -219,7 +219,7 @@ export function setCachedSiteConfig(config: SiteConfig) {
   try {
     localStorage.setItem(SITE_CACHE_KEY, JSON.stringify({ config, ts: Date.now() }));
   } catch {
-    
+    // 写入失败（隐私模式/配额满）不影响在线配置正常使用。
   }
 }
 
@@ -493,9 +493,24 @@ interface SiteState {
   saveConfig: (config: Partial<SiteConfig>) => Promise<boolean>;
 }
 
+// 模块初始化时同步读取本地缓存，让首帧直接使用上次的布局/分页配置；
+// 网络配置回来后再静默更新，避免默认配置先渲染、随后整体跳变。
+const initialCachedConfig = getCachedSiteConfig();
+let initialConfig = defaultConfig;
+let initialLoaded = false;
+if (initialCachedConfig && typeof initialCachedConfig === 'object') {
+  try {
+    initialConfig = normalizeSiteConfig({ ...defaultConfig, ...initialCachedConfig });
+    initialLoaded = true;
+  } catch {
+    // localStorage 可被旧版本/扩展写入非预期结构；损坏时回退默认配置，不能白屏。
+    initialConfig = defaultConfig;
+  }
+}
+
 export const useSiteStore = create<SiteState>((set, get) => ({
-  config: defaultConfig,
-  loaded: false,
+  config: initialConfig,
+  loaded: initialLoaded,
 
   setConfig: (newConfig) => set((state) => ({ config: { ...state.config, ...newConfig } })),
 

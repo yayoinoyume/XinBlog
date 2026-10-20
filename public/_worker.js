@@ -937,6 +937,119 @@ async function getSiteConfigObject(env) {
   };
 }
 
+// ============================================================================
+// 统一响应头与 AI 可读端点
+// ============================================================================
+
+// CSP 先使用 Report-Only：不会阻断页面，只会在控制台报告违规。
+// 等真实访问和后台功能验证完成后，再考虑切换为强制 CSP。
+const CONTENT_SECURITY_POLICY_REPORT_ONLY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'self'",
+  "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://js.hcaptcha.com https://static.geetest.com",
+  "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data: https:",
+  "connect-src 'self' https: wss:",
+  "media-src 'self' blob: https:",
+  "worker-src 'self' blob:",
+  "frame-src 'self' https://challenges.cloudflare.com https://newassets.hcaptcha.com https://static.geetest.com",
+].join('; ');
+
+const SECURITY_HEADERS = [
+  ['X-Frame-Options', 'SAMEORIGIN'],
+  ['X-Content-Type-Options', 'nosniff'],
+  ['Referrer-Policy', 'strict-origin-when-cross-origin'],
+  ['Permissions-Policy', 'geolocation=(), microphone=(self), camera=(self)'],
+  ['Content-Security-Policy-Report-Only', CONTENT_SECURITY_POLICY_REPORT_ONLY],
+];
+
+function withSecurityHeaders(headers) {
+  const out = new Headers(headers || undefined);
+  for (const [name, value] of SECURITY_HEADERS) {
+    if (!out.has(name)) out.set(name, value);
+  }
+  return out;
+}
+
+function withSecurityHeadersOnResponse(res) {
+  if (!res) return res;
+  if (res.webSocket || res.status === 101) return res;
+  const nullBody = res.status === 204 || res.status === 205 || res.status === 304;
+  return new Response(nullBody ? null : res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers: withSecurityHeaders(res.headers),
+  });
+}
+
+function textResponse(body, contentType, cacheControl = 'public, max-age=3600', head = false) {
+  return new Response(head ? null : body, {
+    status: 200,
+    headers: withSecurityHeaders({
+      'Content-Type': contentType,
+      'Cache-Control': cacheControl,
+    }),
+  });
+}
+
+async function serveLlmsTxt(env, url, head = false) {
+  const config = await getSiteConfigObject(env).catch(() => ({ ...defaultSiteConfig }));
+  const siteName = String(config.siteName || 'XinBlog').trim() || 'XinBlog';
+  const description = String(config.shareDescription || '').trim();
+  const origin = url.origin;
+  let posts = [];
+  try {
+    const rows = await env.DB_POSTS.prepare(
+      "SELECT title, slug, excerpt FROM posts WHERE status = 'published' ORDER BY created_at DESC LIMIT 100"
+    ).all();
+    posts = rows.results || [];
+  } catch {
+    // D1 暂时不可用时仍返回一份有效的站点说明，避免回退成 SPA HTML。
+  }
+  const lines = [
+    `# ${siteName}`,
+    '',
+    description || 'XinBlog 个人博客。',
+    '',
+    `Site: ${origin}/`,
+    `Sitemap: ${origin}/sitemap.xml`,
+    `Robots: ${origin}/robots.txt`,
+    '',
+    '## Content',
+  ];
+  if (posts.length === 0) {
+    lines.push('', '- No published posts are currently available.');
+  } else {
+    for (const post of posts) {
+      const excerpt = String(post.excerpt || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+      const title = String(post.title || 'Untitled')
+        .replace(/\s+/g, ' ')
+        .replace(/([\\[\]()])/g, '\\$1');
+      lines.push('', `- [${title}](${origin}/post/${encodeURIComponent(post.slug)})`);
+      if (excerpt) lines.push(`  ${excerpt}`);
+    }
+  }
+  return textResponse(lines.join('\n') + '\n', 'text/plain; charset=utf-8', 'public, max-age=300, s-maxage=3600', head);
+}
+
+async function serveAiCatalog(env, url, head = false) {
+  const config = await getSiteConfigObject(env).catch(() => ({ ...defaultSiteConfig }));
+  const origin = url.origin;
+  const catalog = {
+    name: String(config.siteName || 'XinBlog').trim() || 'XinBlog',
+    description: String(config.shareDescription || '').trim(),
+    url: origin + '/',
+    sitemap: origin + '/sitemap.xml',
+    robots: origin + '/robots.txt',
+    llms: origin + '/llms.txt',
+    language: config.language || 'zh-CN',
+  };
+  return textResponse(JSON.stringify(catalog, null, 2) + '\n', 'application/json; charset=utf-8', 'public, max-age=300, s-maxage=3600', head);
+}
+
 function escapeHtmlMeta(text) {
   return String(text || '')
     .replace(/&/g, '&amp;')
@@ -969,17 +1082,27 @@ function injectSiteMeta(html, config, requestUrl, post, env) {
   if (!image) image = resolveAbsoluteImage('/logo.png', origin);
   image = escapeHtmlMeta(rewriteOgImage(image, origin, env));
 
-  html = html.replace(/<title>.*?<\/title>/i, () => `<title>${title}</title>`);
-  html = html.replace(
-    /<meta\s+name=["']description["'][^>]*>/i,
-    () => `<meta name="description" content="${description}" />`
-  );
-  html = html.replace(
-    /<meta\s+name=["']theme-color["'][^>]*>/i,
-    () => `<meta name="theme-color" content="${themeColor}" />`
-  );
+  // 只删除本函数会重新生成的标签；viewport/字符集/验证标签等必须保留。
+  // charset 单独提取到 head 最前，满足 HTML 规范的 1024 字节早声明要求。
+  const charsetTag = (html.match(/<meta\s+charset=[^>]*>/i) || [])[0] || '';
+  if (charsetTag) html = html.replace(charsetTag, '');
+  html = html
+    .replace(/<title>.*?<\/title>/i, '')
+    .replace(/<meta\s+name=["']description["'][^>]*>/gi, '')
+    .replace(/<meta\s+name=["']theme-color["'][^>]*>/gi, '')
+    .replace(/<link\s+rel=["']manifest["'][^>]*>/gi, '')
+    .replace(/<link\s+rel=["']canonical["'][^>]*>/gi, '')
+    .replace(/<meta\s+(?:property|name)=["'](?:og|twitter):[^"']+["'][^>]*>/gi, '')
+    .replace(/<meta\s+name=["'][^"']+["'][^>]*>/gi, (tag) => {
+      const name = (tag.match(/name=["']([^"']+)["']/i) || [])[1] || '';
+      return (Array.isArray(config.seoVerifications) ? config.seoVerifications : [])
+        .some((v) => v && String(v.name || '').trim() === name) ? '' : tag;
+    });
 
   const metaTags = [
+    charsetTag,
+    `<title>${title}</title>`,
+    `<meta name="description" content="${description}" />`,
     `<link rel="manifest" href="/manifest.json?v=2" />`,
     `<link rel="canonical" href="${escapeHtmlMeta(requestUrl)}" />`,
     ...((Array.isArray(config.seoVerifications) ? config.seoVerifications : [])
@@ -1001,7 +1124,7 @@ function injectSiteMeta(html, config, requestUrl, post, env) {
   return html.replace(/<head>/i, () => `<head>\n${metaTags}`);
 }
 
-async function getManifest(env, requestUrl) {
+async function getManifest(env, requestUrl, head = false) {
   try {
     const config = await getSiteConfigObject(env).catch(() => ({ ...defaultSiteConfig }));
     const origin = new URL(requestUrl).origin;
@@ -1028,7 +1151,7 @@ async function getManifest(env, requestUrl) {
       ],
     };
 
-    return new Response(JSON.stringify(manifest), {
+    return new Response(head ? null : JSON.stringify(manifest), {
       status: 200,
       headers: {
         'Content-Type': 'application/manifest+json; charset=utf-8',
@@ -1056,7 +1179,7 @@ function xmlEscape(str) {
 }
 
 // 站点地图：动态生成，随文章发布/删除自动增删（无需手动维护）。
-async function serveSitemap(env, url) {
+async function serveSitemap(env, url, head = false) {
   const origin = url.origin;
   const rows = await env.DB_POSTS.prepare(
     "SELECT slug, updated_at, created_at FROM posts WHERE status = 'published' ORDER BY created_at DESC"
@@ -1083,7 +1206,7 @@ async function serveSitemap(env, url) {
     items +
     '\n</urlset>\n';
 
-  return new Response(xml, {
+  return new Response(head ? null : xml, {
     status: 200,
     headers: {
       'Content-Type': 'application/xml; charset=utf-8',
@@ -1093,10 +1216,10 @@ async function serveSitemap(env, url) {
 }
 
 // robots.txt：引用站点地图；域名取自请求 origin，与 sitemap/canonical 保持一致。
-function serveRobots(url) {
+function serveRobots(url, head = false) {
   const origin = url.origin;
   const body = ['User-agent: *', 'Allow: /', '', 'Sitemap: ' + origin + '/sitemap.xml', ''].join('\n');
-  return new Response(body, {
+  return new Response(head ? null : body, {
     status: 200,
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',
@@ -8472,8 +8595,7 @@ async function proxyImage(request) {
   }
 }
 
-export default {
-  async fetch(request, env, ctx) {
+async function fetchWorkerResponse(request, env, ctx) {
     if (request.method === 'OPTIONS') {
       return new Response(null, {
         status: 204,
@@ -8641,8 +8763,10 @@ export default {
       }
 
       
-      if (method === 'GET' && path === '/sitemap.xml') return await serveSitemap(env, url);
-      if (method === 'GET' && path === '/robots.txt') return serveRobots(url);
+      if ((method === 'GET' || method === 'HEAD') && path === '/sitemap.xml') return await serveSitemap(env, url, method === 'HEAD');
+      if ((method === 'GET' || method === 'HEAD') && path === '/robots.txt') return serveRobots(url, method === 'HEAD');
+      if ((method === 'GET' || method === 'HEAD') && path === '/llms.txt') return await serveLlmsTxt(env, url, method === 'HEAD');
+      if ((method === 'GET' || method === 'HEAD') && path === '/ai-catalog.json') return await serveAiCatalog(env, url, method === 'HEAD');
 
       
       if (method === 'GET' && path === '/v1/models') return await openaiModels(request, env);
@@ -8654,7 +8778,7 @@ export default {
 
       
       if (method === 'GET' && path === '/api/v1/site') return await getSiteConfig(env);
-      if (method === 'GET' && path === '/manifest.json') return await getManifest(env, request.url);
+      if ((method === 'GET' || method === 'HEAD') && path === '/manifest.json') return await getManifest(env, request.url, method === 'HEAD');
       if (method === 'GET' && path === '/api/v1/posts') return await listPosts(env, url);
 
       
@@ -8954,5 +9078,11 @@ export default {
       }
       return jsonResponse(500, null, msg, 500);
     }
+}
+
+export default {
+  async fetch(request, env, ctx) {
+    const response = await fetchWorkerResponse(request, env, ctx);
+    return withSecurityHeadersOnResponse(response);
   },
 };
