@@ -16,6 +16,7 @@ interface LazyImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   objectFit?: 'cover' | 'contain' | 'fill' | 'none' | 'scale-down';
   placeholder?: 'skeleton' | 'color' | 'none';
   rootMargin?: string;
+  timeoutMs?: number;
   onLoad?: () => void;
   onError?: () => void;
 }
@@ -27,6 +28,7 @@ export function LazyImage({
   objectFit = 'cover',
   placeholder = 'color',
   rootMargin = '100px',
+  timeoutMs = 8000,
   onLoad,
   onError,
   style,
@@ -40,7 +42,15 @@ export function LazyImage({
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const [visible, setVisible] = useState(!shouldLazy);
+  const [timedOut, setTimedOut] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setTimedOut(false);
+    if (!visible || !src || loaded || error || timeoutMs <= 0) return;
+    const timer = window.setTimeout(() => setTimedOut(true), timeoutMs);
+    return () => window.clearTimeout(timer);
+  }, [src, visible, loaded, error, timeoutMs]);
 
   useEffect(() => {
     if (!shouldLazy) {
@@ -78,7 +88,7 @@ export function LazyImage({
     onError?.();
   };
 
-  const showColorPlaceholder = placeholder !== 'none' && !loaded && !error;
+  const showColorPlaceholder = placeholder !== 'none' && (!loaded || timedOut) && !error;
 
   return (
     <Box
@@ -124,7 +134,7 @@ export function LazyImage({
           }}
         />
       )}
-      {visible && src && !error && (
+      {visible && src && !error && !timedOut && (
         <Box
           component="img"
           src={src}
