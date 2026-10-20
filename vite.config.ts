@@ -38,6 +38,12 @@ export default defineConfig({
   build: {
     outDir: OUT_DIR,
     emptyOutDir: true,
+    modulePreload: {
+      polyfill: false,
+      resolveDependencies(_filename, deps) {
+        return deps.filter((dep) => /(?:rolldown-runtime|mui-vendor|react-vendor|index-|client-|siteStore-|useMusicPlayer-)/.test(dep));
+      },
+    },
     rollupOptions: {
       output: {
         // 把会被大量页面共享的依赖收成少量稳定包，减少首屏 HTTP 往返。
