@@ -1121,7 +1121,7 @@ function injectSiteMeta(html, config, requestUrl, post, env) {
   return html.replace(/<head>/i, () => `<head>\n${metaTags}`);
 }
 
-async function getManifest(env, requestUrl) {
+async function getManifest(env, requestUrl, head = false) {
   try {
     const config = await getSiteConfigObject(env).catch(() => ({ ...defaultSiteConfig }));
     const origin = new URL(requestUrl).origin;
@@ -1148,7 +1148,7 @@ async function getManifest(env, requestUrl) {
       ],
     };
 
-    return new Response(JSON.stringify(manifest), {
+    return new Response(head ? null : JSON.stringify(manifest), {
       status: 200,
       headers: {
         'Content-Type': 'application/manifest+json; charset=utf-8',
@@ -1176,7 +1176,7 @@ function xmlEscape(str) {
 }
 
 // 站点地图：动态生成，随文章发布/删除自动增删（无需手动维护）。
-async function serveSitemap(env, url) {
+async function serveSitemap(env, url, head = false) {
   const origin = url.origin;
   const rows = await env.DB_POSTS.prepare(
     "SELECT slug, updated_at, created_at FROM posts WHERE status = 'published' ORDER BY created_at DESC"
@@ -1203,7 +1203,7 @@ async function serveSitemap(env, url) {
     items +
     '\n</urlset>\n';
 
-  return new Response(xml, {
+  return new Response(head ? null : xml, {
     status: 200,
     headers: {
       'Content-Type': 'application/xml; charset=utf-8',
@@ -1213,10 +1213,10 @@ async function serveSitemap(env, url) {
 }
 
 // robots.txt：引用站点地图；域名取自请求 origin，与 sitemap/canonical 保持一致。
-function serveRobots(url) {
+function serveRobots(url, head = false) {
   const origin = url.origin;
   const body = ['User-agent: *', 'Allow: /', '', 'Sitemap: ' + origin + '/sitemap.xml', ''].join('\n');
-  return new Response(body, {
+  return new Response(head ? null : body, {
     status: 200,
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',
@@ -8760,8 +8760,8 @@ async function fetchWorkerResponse(request, env, ctx) {
       }
 
       
-      if ((method === 'GET' || method === 'HEAD') && path === '/sitemap.xml') return await serveSitemap(env, url);
-      if ((method === 'GET' || method === 'HEAD') && path === '/robots.txt') return serveRobots(url);
+      if ((method === 'GET' || method === 'HEAD') && path === '/sitemap.xml') return await serveSitemap(env, url, method === 'HEAD');
+      if ((method === 'GET' || method === 'HEAD') && path === '/robots.txt') return serveRobots(url, method === 'HEAD');
       if ((method === 'GET' || method === 'HEAD') && path === '/llms.txt') return await serveLlmsTxt(env, url, method === 'HEAD');
       if ((method === 'GET' || method === 'HEAD') && path === '/ai-catalog.json') return await serveAiCatalog(env, url, method === 'HEAD');
 
@@ -8775,7 +8775,7 @@ async function fetchWorkerResponse(request, env, ctx) {
 
       
       if (method === 'GET' && path === '/api/v1/site') return await getSiteConfig(env);
-      if ((method === 'GET' || method === 'HEAD') && path === '/manifest.json') return await getManifest(env, request.url);
+      if ((method === 'GET' || method === 'HEAD') && path === '/manifest.json') return await getManifest(env, request.url, method === 'HEAD');
       if (method === 'GET' && path === '/api/v1/posts') return await listPosts(env, url);
 
       

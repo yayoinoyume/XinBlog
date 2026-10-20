@@ -71,13 +71,6 @@ function App() {
   const theme = useAppTheme();
   const music = useSiteStore((s) => s.config.music);
 
-  // 首屏不再等待网络后，站点名要同步进默认文档标题，避免先用静态兜底标题。
-  useEffect(() => {
-    if (typeof document !== 'undefined') {
-      document.title = useSiteStore.getState().config.siteName || 'XinBlog';
-    }
-  }, []);
-
   useEffect(() => {
     const state = useThemeConfigStore.getState();
     if (state.borderRadius > 16) {
@@ -93,6 +86,9 @@ function App() {
         // theme/ui 的 loadConfig 只读取 siteStore，无网络 I/O；保持顺序即可。
         void useThemeConfigStore.getState().loadConfig();
         void useUIStore.getState().loadConfig();
+      })
+      .catch(() => {
+        // 站点配置失败时仍保留本地缓存/默认配置，页面不要被异常状态挂住。
       });
   }, []);
 

@@ -56,6 +56,8 @@ test('injectSiteMeta keeps viewport and verification meta and removes duplicates
   assert.equal((out.match(/name="google-site-verification"/g) || []).length, 1);
   assert.ok(out.includes('<meta name="viewport"'));
   assert.ok(out.includes('<meta name="google-site-verification"'));
+  const charsetIndex = out.indexOf('<meta charset');
+  assert.ok(charsetIndex >= 0, 'charset must survive injection');
   assert.ok(out.indexOf('<meta charset="UTF-8">') < out.indexOf('<title>'));
 });
 
