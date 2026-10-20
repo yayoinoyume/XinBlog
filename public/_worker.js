@@ -1025,7 +1025,10 @@ async function serveLlmsTxt(env, url, head = false) {
   } else {
     for (const post of posts) {
       const excerpt = String(post.excerpt || '').replace(/\s+/g, ' ').trim().slice(0, 160);
-      lines.push('', `- [${String(post.title || 'Untitled')}](${origin}/post/${encodeURIComponent(post.slug)})`);
+      const title = String(post.title || 'Untitled')
+        .replace(/\s+/g, ' ')
+        .replace(/([\\[\]()])/g, '\\$1');
+      lines.push('', `- [${title}](${origin}/post/${encodeURIComponent(post.slug)})`);
       if (excerpt) lines.push(`  ${excerpt}`);
     }
   }
