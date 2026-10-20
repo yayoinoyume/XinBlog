@@ -8775,6 +8775,7 @@ async function fetchWorkerResponse(request, env, ctx) {
       if ((method === 'GET' || method === 'HEAD') && path === '/robots.txt') return serveRobots(url, method === 'HEAD');
       if ((method === 'GET' || method === 'HEAD') && path === '/llms.txt') return await serveLlmsTxt(env, url, method === 'HEAD');
       if ((method === 'GET' || method === 'HEAD') && path === '/ai-catalog.json') return await serveAiCatalog(env, url, method === 'HEAD');
+      if ((method === 'GET' || method === 'HEAD') && path === '/.well-known/ai-catalog.json') return await serveAiCatalog(env, url, method === 'HEAD');
 
       
       if (method === 'GET' && path === '/v1/models') return await openaiModels(request, env);

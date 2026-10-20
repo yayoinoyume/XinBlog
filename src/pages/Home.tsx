@@ -3,7 +3,6 @@ import {
   Container,
   Typography,
   Chip,
-  Fade,
   alpha,
   InputBase,
   IconButton,
@@ -334,7 +333,7 @@ export function Home() {
         )}
 
         <Container maxWidth="lg" sx={{ pb: 8 }}>
-          <Box sx={{ mb: 4 }}>
+          <Box sx={{ mb: 4, minHeight: { xs: 520, sm: 640 } }}>
             <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: { xs: 'flex-start', sm: 'space-between' }, mb: 3, flexWrap: 'wrap', gap: 1 }}>
               <Typography variant="h4" component="h2" sx={{ fontWeight: 700, fontSize: { xs: '1.5rem', sm: '2rem', md: '2.125rem' } }}>
                 {queryFromUrl ? '搜索结果' : '最新文章'}
@@ -370,8 +369,7 @@ export function Home() {
             {loading ? (
               <Loading />
             ) : (
-              <Fade in timeout={400}>
-                <Box>
+              <Box>
                   {filteredPosts.length === 0 ? (
                     <Box sx={{ textAlign: 'center', py: 6 }}>
                       <Typography variant="h6" color="text.secondary" gutterBottom>
@@ -458,8 +456,6 @@ export function Home() {
 
                   )}
                 </Box>
-
-              </Fade>
 
             )}
           </Box>
