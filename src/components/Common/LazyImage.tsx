@@ -134,7 +134,7 @@ export function LazyImage({
           }}
         />
       )}
-      {visible && src && !error && !timedOut && (
+      {visible && src && !error && (
         <Box
           component="img"
           src={src}
@@ -146,7 +146,7 @@ export function LazyImage({
             height: '100%',
             objectFit,
             display: 'block',
-            opacity: loaded ? 1 : 0,
+            opacity: loaded && !timedOut ? 1 : 0,
             transition: (theme) => theme.transitions.create('opacity', { duration: 600 }),
             ...style,
           }}
