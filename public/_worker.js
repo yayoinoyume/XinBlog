@@ -8787,6 +8787,13 @@ async function fetchWorkerResponse(request, env, ctx) {
 
       
       if (method === 'GET' && path === '/api/v1/site') return await getSiteConfig(env);
+      if (path === '/favicon.ico' || path === '/favicon.png') {
+        // 缺失的 favicon 不能被 SPA 回退成 HTML，否则浏览器会报语法错误。
+        return new Response(null, {
+          status: 204,
+          headers: withSecurityHeaders({ 'Cache-Control': 'public, max-age=3600' }),
+        });
+      }
       if ((method === 'GET' || method === 'HEAD') && path === '/manifest.json') return await getManifest(env, request.url, method === 'HEAD');
       if (method === 'GET' && path === '/api/v1/posts') return await listPosts(env, url);
 
