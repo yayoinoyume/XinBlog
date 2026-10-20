@@ -3,6 +3,7 @@ import dayjs from 'dayjs';
 import type { Post } from '@/types';
 import { PostDetailBackButton } from './PostDetailBackButton';
 import { TagChip } from '@/components/Common/TagChip';
+import { withOssThumbnail } from '@/api/posts';
 
 interface PostDetailHeaderProps {
   post: Post;
@@ -37,7 +38,7 @@ export function PostDetailHeader({ post, showBackButton = true, titleColor }: Po
             },
           }}
         >
-          <Box component="img" src={post.cover} alt={post.title} loading="eager" />
+          <Box component="img" src={withOssThumbnail(post.cover, 1200)} alt={post.title} loading="eager" />
         </Box>
 
       )}

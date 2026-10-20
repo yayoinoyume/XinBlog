@@ -50,6 +50,22 @@ export function transformTag(backend: BackendTag): Tag {
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+const OSS_IMAGE_HOST = 'oss.yayoi.love';
+
+/** 给 OSS 图片追加受控缩略参数；非 OSS/已有处理参数/非 http(s) 地址原样返回。 */
+export function withOssThumbnail(src: string | undefined, width: number): string | undefined {
+  if (!src) return src;
+  try {
+    const url = new URL(src, typeof window !== 'undefined' ? window.location.origin : 'https://private.invalid/r/8fd7f40ce8bc');
+    if (url.hostname !== OSS_IMAGE_HOST) return src;
+    if (url.searchParams.has('x-oss-process')) return src;
+    const safeWidth = Math.min(1600, Math.max(80, Math.round(width)));
+    url.searchParams.set('x-oss-process', `image/resize,w_${safeWidth}/format,webp/quality,q_75`);
+    return url.toString();
+  } catch {
+    return src;
+  }
+}
 
 export function transformPost(backend: BackendPost, defaultAuthor = '星语'): Post {
   let cover = backend.cover_base64 || undefined;

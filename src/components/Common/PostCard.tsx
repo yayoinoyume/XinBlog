@@ -12,6 +12,7 @@ import {
 import { AccessTime, Visibility } from '@mui/icons-material';
 import { Link } from 'react-router-dom';
 import { LazyImage } from '@/components/Common/LazyImage';
+import { withOssThumbnail } from '@/api/posts';
 import { useSiteStore } from '@/stores/siteStore';
 import { resolveSpacingConfig } from '@/utils/spacingConfig';
 import type { Post, PostCardThemeConfig } from '@/types';
@@ -217,7 +218,7 @@ function PostCardBase({ post, theme, forcedLayout, height, index }: PostCardProp
               <>
                 {post.cover && (
                   <Box sx={output.media}>
-                    <LazyImage src={post.cover} alt={post.title} objectFit="cover" placeholder="skeleton" />
+                    <LazyImage src={withOssThumbnail(post.cover, 640)} alt={post.title} objectFit="cover" placeholder="skeleton" />
                   </Box>
 
                 )}
@@ -366,7 +367,7 @@ function PostCardBase({ post, theme, forcedLayout, height, index }: PostCardProp
                   },
                 }}
               >
-                <LazyImage src={post.cover} alt={post.title} objectFit="cover" placeholder="skeleton" />
+                <LazyImage src={withOssThumbnail(post.cover, 640)} alt={post.title} objectFit="cover" placeholder="skeleton" />
               </Box>
 
             )}
@@ -466,7 +467,7 @@ function PostCardBase({ post, theme, forcedLayout, height, index }: PostCardProp
                   },
                 }}
               >
-                <LazyImage src={post.cover} alt={post.title} objectFit="cover" placeholder="skeleton" />
+                <LazyImage src={withOssThumbnail(post.cover, 640)} alt={post.title} objectFit="cover" placeholder="skeleton" />
               </Box>
 
               <Box
