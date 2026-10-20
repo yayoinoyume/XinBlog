@@ -16,8 +16,12 @@ import {
   ExpandMore,
   ChevronLeft,
   ChevronRight,
+  Add as AddIcon,
+  Comment as CommentIcon,
+  PermMedia as PermMediaIcon,
+  Label as LabelIcon,
 } from '@mui/icons-material';
-import { lazy, Suspense, useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSiteStore } from '@/stores/siteStore';
 import { fetchPostsPage, fetchAllPosts, fetchTags } from '@/api/posts';
@@ -27,7 +31,7 @@ import { Loading } from '@/components/Common/Loading';
 import { HeroFullscreen } from '@/components/Hero/HeroFullscreen';
 import { searchPosts } from '@/utils/search';
 import { resolveSpacingConfig } from '@/utils/spacingConfig';
-const AdminHomeActions = lazy(() => import('@/components/Admin/AdminHomeActions'));
+import { AdminFrameFab } from '@/components/Admin/AdminFrameFab';
 import type { Post, Tag, PaginationMode } from '@/types';
 
 export function Home() {
@@ -482,9 +486,11 @@ export function Home() {
           )}
         </Container>
 
-        <Suspense fallback={null}>
-          <AdminHomeActions />
-        </Suspense>
+        {}
+        <AdminFrameFab adminPath="/admin/posts?compose=1&embed=1" label="写文章" icon={<AddIcon />} onSaved={() => window.location.reload()} />
+        <AdminFrameFab adminPath="/admin/comments?embed=1" label="管理评论" icon={<CommentIcon />} bottomOffset={64} onSaved={() => window.location.reload()} />
+        <AdminFrameFab adminPath="/admin/media?embed=1" label="管理媒体" icon={<PermMediaIcon />} bottomOffset={128} />
+        <AdminFrameFab adminPath="/admin/tags?embed=1" label="管理标签" icon={<LabelIcon />} bottomOffset={192} />
       </Box>
 
   );

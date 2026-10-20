@@ -59,18 +59,14 @@ export default defineConfig({
             return 'react-vendor'
           }
           if (id.includes('/@emotion/')) return 'mui-vendor'
-          // 首屏框架和首页当前实际会加载的 MUI 基础/交互组件放进两个稳定包，
-          // 避免 Rolldown 把它们拆成几十个首屏小请求；后台页面仍按路由懒加载。
+          // 只合并入口必需、且解构导入的 MUI 核心组件；列表、弹窗、菜单、
+          // 图标和后台专用组件继续按路由懒加载，避免把未用代码提进首屏。
           if (id.includes('/@mui/material/')) {
             const entryComponents = [
               '/AppBar/', '/Box/', '/Button/', '/CssBaseline/', '/GlobalStyles/',
               '/Link/', '/Paper/', '/Typography/', '/styles/', '/colors.js',
-              '/Toolbar/', '/Container/', '/Chip/', '/Skeleton/', '/InputBase/',
-              '/IconButton/', '/Tooltip/', '/Menu/', '/MenuItem/', '/Popper/',
-              '/Fade/', '/Grow/', '/Slider/', '/Dialog/', '/Modal/',
             ]
             if (entryComponents.some((part) => id.includes(part))) return 'mui-vendor'
-            if (id.includes('/@mui/material/')) return 'mui-vendor'
           }
         },
       },
