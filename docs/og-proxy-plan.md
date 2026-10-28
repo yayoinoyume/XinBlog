@@ -165,7 +165,7 @@ async function resolveHostToIPs(host) {
 OSS/CDN 常对原图 URL 302 到签名地址。**手动循环、每跳重新校验**，不用 `redirect: 'follow'`（避免跳出白名单）：
 
 ```js
-async function fetchImageThroughProxy(targetStr, env, ctx) {
+async function fetchImageThroughProxy(targetStr, env, ctx, referer) {
   let current = targetStr;
   for (let hop = 0; hop <= IMG_PROXY_MAX_REDIRECTS; hop++) {
     const err = assertSafeProxyTarget(current, env);
@@ -174,10 +174,12 @@ async function fetchImageThroughProxy(targetStr, env, ctx) {
       const ips = await resolveHostToIPs(new URL(current).hostname);
       if (ips.length && ips.every(isPrivateIp)) return { status: 403, body: null }; // 全私网，拒
     }
-    const resp = await fetch(current, { method: 'GET', redirect: 'manual', headers: {
+    const headers = {
       'User-Agent': 'Mozilla/5.0 (compatible; XinBlog-ImgProxy/1.0)',
       Accept: 'image/avif,image/webp,image/*,*/*;q=0.8',
-    }});
+    };
+    if (referer) headers.Referer = referer; // CDN 防盗链拒绝空 Referer 后，回源仍需带站点 Referer
+    const resp = await fetch(current, { method: 'GET', redirect: 'manual', headers });
     if (resp.status >= 300 && resp.status < 400 && resp.headers.get('location')) {
       current = new URL(resp.headers.get('location'), current).href; // 相对/绝对都兼容
       continue; // 下一跳重新校验
@@ -236,7 +238,7 @@ async function proxyOgImage(request, env, ctx) {
     return jsonResponse(429, null, '图片代理请求过于频繁，请稍后再试', 429);
   }
 
-  const result = await fetchImageThroughProxy(target, env, ctx); // §4.4
+  const result = await fetchImageThroughProxy(target, env, ctx, url.origin + '/'); // §4.4：回源带站点 Referer
   if (result.status !== 200 || !result.resp) {
     // —— 失败回退：302 到原始图 URL，绝不缺图 ——
     return new Response(null, { status: 302, headers: { Location: target } });
@@ -361,7 +363,7 @@ if (method === 'GET' && path === '/api/v1/og-img') return await proxyOgImage(req
    - `function isAllowedProxyHost(host, env)`（§4.2）
    - `function isPrivateIp(ip)`、`async function resolveHostToIPs(host)`（§4.3，可选）
    - `function assertSafeProxyTarget(targetStr, env)`（§4.3）
-   - `async function fetchImageThroughProxy(targetStr, env, ctx)`（§4.4）
+   - `async function fetchImageThroughProxy(targetStr, env, ctx, referer)`（§4.4）
    - `async function enforceSizeLimit(resp, limit)`（§4.5）
    - `async function proxyOgImage(request, env, ctx)`（§5.1）
    - `function rewriteOgImage(image, origin, env)`（§5.2）
@@ -421,3 +423,13 @@ if (method === 'GET' && path === '/api/v1/og-img') return await proxyOgImage(req
 IMG_PROXY_EXTRA_HOSTS = ""            # 额外白名单主机，逗号分隔
 IMG_PROXY_ENABLE_IP_CHECK = "false"   # "true" 开启 DNS/IP 私网过滤
 ```
+
+---
+
+## 10. 后续修复：OG 图回源携带 Referer（2026-10）
+
+阿里云 CDN / OSS 开启 Referer 防盗链并**关闭「允许空 Referer」**后，worker 的 fetchImageThroughProxy 不带 Referer 会被 403，导致 og:image 代理失败。现已在回源 fetch 中带上站点源 new URL(request.url).origin + '/'（生产即 https://blog.yayoi.love/），并随重定向每一跳发送。
+
+- 仅影响 /api/v1/og-img 的 worker 回源；浏览器直连 OSS（站内图片）本来就带页面 Referer，不受影响。
+- 空 Referer 放行的「地址栏 / 聊天软件直接打开 OSS 链接」仍依赖 CDN 的允许空 Referer 开关；关闭后这类直链会 403，但站内图片与经 worker 的 OG 图正常。
+- 回源 Referer 取自请求 Origin，站点换绑自定义域时需确保该域在 CDN Referer 白名单内。

@@ -16,22 +16,26 @@ const ranges = [
   ['function escapeHtmlMeta(', 'async function getManifest('],
 ];
 const snippets = ranges.map(([startMarker, endMarker]) => getRange(startMarker, endMarker));
+snippets.push(getRange('const IMG_PROXY_EXACT_HOSTS', 'const ALLOWED_IMAGE_MIME'));
 snippets.push(getRange('function isAllowedProxyHost(', 'function rewriteOgImage('));
 snippets.push(getRange('function rewriteOgImage(', 'function truncateMeta('));
 const snippet = snippets.join('\n');
 
-function loadHelpers() {
+function loadHelpers(overrides = {}) {
   const context = {
     Headers,
+    Request,
     Response,
     URL,
     console: { error() {} },
     env: { IMG_PROXY_EXTRA_HOSTS: '' },
     defaultSiteConfig: {},
     defaultFriendsConfig: {},
+    ...overrides,
   };
   vm.createContext(context);
   vm.runInContext(`${snippet}\nthis.__test = { injectSiteMeta, withSecurityHeaders, withSecurityHeadersOnResponse, textResponse };`, context);
+  vm.runInContext('this.__test.fetchImageThroughProxy = fetchImageThroughProxy; this.__test.proxyOgImage = proxyOgImage;', context);
   return context.__test;
 }
 
@@ -85,4 +89,43 @@ test('textResponse emits correct content type and security headers', async () =>
   assert.equal(await res.text(), 'hello');
   const head = helpers.textResponse('hello', 'text/plain; charset=utf-8', undefined, true);
   assert.equal(await head.text(), '');
+});
+
+test('image proxy fetch carries the site Referer for CDN anti-leech', async () => {
+  let called = null;
+  const helpers = loadHelpers({
+    fetch: async (url, init) => {
+      called = { url, headers: init.headers };
+      return new Response('img', { status: 200, headers: { 'content-type': 'image/jpeg' } });
+    },
+  });
+  const result = await helpers.fetchImageThroughProxy(
+    'https://oss.yayoi.love/blog/cover.jpg',
+    { IMG_PROXY_EXTRA_HOSTS: '' },
+    null,
+    'https://blog.yayoi.love/',
+  );
+  assert.equal(result.status, 200);
+  assert.equal(called.headers.Referer, 'https://blog.yayoi.love/');
+});
+
+test('og image proxy passes the request origin as Referer', async () => {
+  let called = null;
+  const helpers = loadHelpers({
+    checkRateLimit: async () => true,
+    getClientIp: () => '192.0.2.x',
+    caches: { default: { match: async () => undefined, put: async () => undefined } },
+    fetch: async (url, init) => {
+      called = { url, headers: init.headers };
+      return new Response('img', {
+        status: 200,
+        headers: { 'content-type': 'image/jpeg', 'content-length': '3' },
+      });
+    },
+  });
+  const target = 'https://oss.yayoi.love/blog/cover.jpg';
+  const request = { url: 'https://blog.yayoi.love/api/v1/og-img?u=' + encodeURIComponent(target) };
+  const res = await helpers.proxyOgImage(request, { IMG_PROXY_EXTRA_HOSTS: '' }, { waitUntil() {} });
+  assert.equal(res.status, 200);
+  assert.equal(called.headers.Referer, 'https://blog.yayoi.love/');
 });
