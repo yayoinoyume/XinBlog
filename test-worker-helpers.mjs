@@ -129,3 +129,43 @@ test('og image proxy passes the request origin as Referer', async () => {
   assert.equal(res.status, 200);
   assert.equal(called.headers.Referer, 'https://blog.yayoi.love/');
 });
+
+test('image proxy keeps Referer across redirects', async () => {
+  const calls = [];
+  const helpers = loadHelpers({
+    fetch: async (url, init) => {
+      calls.push({ url, headers: init.headers });
+      if (calls.length === 1) {
+        return new Response(null, { status: 302, headers: { location: '/redirected.jpg' } });
+      }
+      return new Response('img', { status: 200, headers: { 'content-type': 'image/jpeg' } });
+    },
+  });
+  const result = await helpers.fetchImageThroughProxy(
+    'https://oss.yayoi.love/a.jpg',
+    { IMG_PROXY_EXTRA_HOSTS: '' },
+    null,
+    'https://blog.yayoi.love/',
+  );
+  assert.equal(result.status, 200);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].headers.Referer, 'https://blog.yayoi.love/');
+  assert.equal(calls[1].headers.Referer, 'https://blog.yayoi.love/');
+  assert.equal(calls[1].url, 'https://oss.yayoi.love/redirected.jpg');
+});
+
+test('image proxy omits Referer when none is supplied', async () => {
+  let called = null;
+  const helpers = loadHelpers({
+    fetch: async (url, init) => {
+      called = { url, headers: init.headers };
+      return new Response('img', { status: 200, headers: { 'content-type': 'image/jpeg' } });
+    },
+  });
+  await helpers.fetchImageThroughProxy(
+    'https://oss.yayoi.love/a.jpg',
+    { IMG_PROXY_EXTRA_HOSTS: '' },
+    null,
+  );
+  assert.equal(called.headers.Referer, undefined);
+});
