@@ -58,7 +58,7 @@
 | 端点路径 | `GET /api/v1/og-img?u=<encodeURIComponent(原始图绝对URL)>`（query 式） |
 | 白名单 | 代码常量（仅 `oss.yayoi.love` 精确主机；泛后缀已清空）+ 可选 `env.IMG_PROXY_EXTRA_HOSTS` 扩展；需额外域时经 `IMG_PROXY_EXTRA_HOSTS` 加入 |
 | SSRF 防护 | protocol 仅 http(s)；hostname 白名单（精确主机 + env 扩展）；重定向**每跳重新校验**；可选 DNS/IP 私网过滤（`IMG_PROXY_ENABLE_IP_CHECK`） |
-| 大小上限 | `IMG_PROXY_MAX_BYTES` 默认 5MB，超限 502 |
+| 大小上限 | `IMG_PROXY_MAX_BYTES` 默认 5MB，超限由 handler 302 回退到原图 |
 | 边缘缓存 | Cache API，键=完整请求 URL；仅缓存 200 且 `image/*`；`Cache-Control: public, max-age=86400, s-maxage=604800`；错误不缓存 |
 | og:image 改写 | 在 `injectSiteMeta` 内对最终绝对 image 统一改写：非本站域且在可代理白名单 → 代理端点地址；本站域/相对路径/非白名单外链保持不变 |
 | 摘要截断 | 新增 `truncateMeta(str, 200)`，按**码点**截断 + `…`，先截断后 `escapeHtmlMeta` |
@@ -165,7 +165,7 @@ async function resolveHostToIPs(host) {
 OSS/CDN 常对原图 URL 302 到签名地址。**手动循环、每跳重新校验**，不用 `redirect: 'follow'`（避免跳出白名单）：
 
 ```js
-async function fetchImageThroughProxy(targetStr, env, ctx) {
+async function fetchImageThroughProxy(targetStr, env, ctx, referer) {
   let current = targetStr;
   for (let hop = 0; hop <= IMG_PROXY_MAX_REDIRECTS; hop++) {
     const err = assertSafeProxyTarget(current, env);
@@ -174,10 +174,12 @@ async function fetchImageThroughProxy(targetStr, env, ctx) {
       const ips = await resolveHostToIPs(new URL(current).hostname);
       if (ips.length && ips.every(isPrivateIp)) return { status: 403, body: null }; // 全私网，拒
     }
-    const resp = await fetch(current, { method: 'GET', redirect: 'manual', headers: {
+    const headers = {
       'User-Agent': 'Mozilla/5.0 (compatible; XinBlog-ImgProxy/1.0)',
       Accept: 'image/avif,image/webp,image/*,*/*;q=0.8',
-    }});
+    };
+    if (referer) headers.Referer = referer; // CDN 防盗链拒绝空 Referer 后，回源仍需带站点 Referer
+    const resp = await fetch(current, { method: 'GET', redirect: 'manual', headers });
     if (resp.status >= 300 && resp.status < 400 && resp.headers.get('location')) {
       current = new URL(resp.headers.get('location'), current).href; // 相对/绝对都兼容
       continue; // 下一跳重新校验
@@ -189,8 +191,8 @@ async function fetchImageThroughProxy(targetStr, env, ctx) {
 ```
 
 ### 4.5 大小上限
-- 优先看响应头 `content-length`，超 `IMG_PROXY_MAX_BYTES` 直接 502。
-- 无长度头（chunked）时边读边数，累计超限即中止并 502（骨架）：
+- 优先看响应头 `content-length`，超 `IMG_PROXY_MAX_BYTES` 直接判超限（handler 返回 302 回退原图）。
+- 无长度头（chunked）时边读边数，累计超限即中止并判超限（handler 返回 302 回退原图，骨架）：
 
 ```js
 async function enforceSizeLimit(resp, limit) {
@@ -218,8 +220,8 @@ async function proxyOgImage(request, env, ctx) {
 
   // ① 入口前置校验（P2-1）：非法 URL/协议 → 400；非白名单主机 → 403（硬拒：不回退、不计数、不缓存）
   const verr = assertSafeProxyTarget(target, env);
-  if (verr === 'invalid-url' || verr === 'protocol') return jsonResponse(400, null, '图片 URL 非法（协议仅支持 http/https）');
-  if (verr === 'host') return jsonResponse(403, null, '图片域名不在代理白名单内');
+  if (verr === 'invalid-url' || verr === 'protocol') return jsonResponse(400, null, '图片 URL 非法（协议仅支持 http/https）', 400);
+  if (verr === 'host') return jsonResponse(403, null, '图片域名不在代理白名单内', 403);
 
   // ② 边缘缓存：读 ——（键 = 完整请求 URL；命中在限流之前返回、不计数）
   let cacheKey = null;
@@ -236,7 +238,7 @@ async function proxyOgImage(request, env, ctx) {
     return jsonResponse(429, null, '图片代理请求过于频繁，请稍后再试', 429);
   }
 
-  const result = await fetchImageThroughProxy(target, env, ctx); // §4.4
+  const result = await fetchImageThroughProxy(target, env, ctx, url.origin + '/'); // §4.4：回源带站点 Referer
   if (result.status !== 200 || !result.resp) {
     // —— 失败回退：302 到原始图 URL，绝不缺图 ——
     return new Response(null, { status: 302, headers: { Location: target } });
@@ -361,7 +363,7 @@ if (method === 'GET' && path === '/api/v1/og-img') return await proxyOgImage(req
    - `function isAllowedProxyHost(host, env)`（§4.2）
    - `function isPrivateIp(ip)`、`async function resolveHostToIPs(host)`（§4.3，可选）
    - `function assertSafeProxyTarget(targetStr, env)`（§4.3）
-   - `async function fetchImageThroughProxy(targetStr, env, ctx)`（§4.4）
+   - `async function fetchImageThroughProxy(targetStr, env, ctx, referer)`（§4.4）
    - `async function enforceSizeLimit(resp, limit)`（§4.5）
    - `async function proxyOgImage(request, env, ctx)`（§5.1）
    - `function rewriteOgImage(image, origin, env)`（§5.2）
@@ -407,6 +409,11 @@ if (method === 'GET' && path === '/api/v1/og-img') return await proxyOgImage(req
 5. 描述 >200 → 安全截断 + `…`。
 6. 非文章页 OG 与改动前一致（`post`/`env` 缺省路径零回归）。
 7. 备份存在、可回滚。
+8. 部署后、关闭 allow_empty 前，带 Referer 直连真实 OSS 图：
+   curl -sI -e 'https://blog.yayoi.love/' 'https://oss.yayoi.love/blog/<真实封面>'
+   必须返回 200 + content-type: image/*。若返回 302 且 Location 不是 oss.yayoi.love，先把该主机加入 IMG_PROXY_EXTRA_HOSTS，否则不要关闭空 Referer。
+9. 代理冒烟：curl -sI 'https://blog.yayoi.love/api/v1/og-img?u=<encodeURIComponent(OSS图URL)>' 必须返回 200 + image/*，不能是 302。通过后才关闭 CDN/OSS 的「允许空 Referer」。
+10. 控制台「精确匹配」保持不勾选；关闭空 Referer 后接受 PicGo 直链、pages.dev 预览域、localhost 预览域 403。
 
 ---
 
@@ -421,3 +428,33 @@ if (method === 'GET' && path === '/api/v1/og-img') return await proxyOgImage(req
 IMG_PROXY_EXTRA_HOSTS = ""            # 额外白名单主机，逗号分隔
 IMG_PROXY_ENABLE_IP_CHECK = "false"   # "true" 开启 DNS/IP 私网过滤
 ```
+
+---
+
+## 10. 后续修复：OG 图回源携带 Referer（2026-10）
+
+阿里云 CDN / OSS 开启 Referer 防盗链并**关闭「允许空 Referer」**后，worker 的 fetchImageThroughProxy 不带 Referer 会被 403，导致 og:image 代理失败。现已在回源 fetch 中带上站点源 new URL(request.url).origin + '/'（生产即 https://blog.yayoi.love/），并随重定向每一跳发送。
+
+### 10.1 关闭 allow_empty 前必须验证（顺序不可颠倒）
+
+1. 先部署 worker，CDN/OSS 的「允许空 Referer」保持 on。
+2. 带 Referer 直连真实 OSS 图：
+   curl -sI -e 'https://blog.yayoi.love/' 'https://oss.yayoi.love/blog/<真实封面>'
+   必须返回 200 + content-type: image/*。若返回 302 且 Location 不是 oss.yayoi.love，先把该主机加入 IMG_PROXY_EXTRA_HOSTS，否则不要关闭空 Referer。
+3. 验证 worker 代理：
+   curl -sI 'https://blog.yayoi.love/api/v1/og-img?u=<encodeURIComponent(OSS图URL)>'
+   必须是 200 + image/*，不能是 302。
+4. 以上通过后，才关闭 CDN/OSS 的「允许空 Referer」。
+5. 控制台「精确匹配」必须保持不勾选（勾选后 yayoi.love 不再匹配 blog.yayoi.love）；「忽略 Scheme」可任意，因为代码发送的 Referer 带协议。
+
+### 10.2 关闭后的已知影响
+
+- 失败回退：429 限流、>5MB、非 image/*、重定向超 3 跳、上游 403 时，handler 仍 302 到裸 OSS URL；爬虫随后不带 Referer 会 403。也就是说“绝不缺图”仅在 allow_empty=on 时成立。
+- PicGo 直链：把 https://oss.yayoi.love/... 直接贴到地址栏、微信、Notion 等不带 Referer 的场景会 403。
+- 预览/本地：pages.dev 预览域和 http://localhost:* 不在 CDN 白名单，og 图会 403；生产域名不受影响。
+- 客户端：src/stores/siteStore.ts 仍会把 og:image 写成原始 OSS 地址；只有执行 JS 的抓取器可能受影响，主流程以服务端注入为准。
+- 回源 Referer 取自请求 Origin；站点换绑自定义域时需确保该域在 CDN Referer 白名单内。
+
+### 10.3 站内图片
+
+浏览器直连 OSS（站内图片）本来就会带页面 Referer（blog.yayoi.love，命中白名单），不受影响。但主动抑制 Referer 的隐私设置/部分微信 webview 仍可能 403。

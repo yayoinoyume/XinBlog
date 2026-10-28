@@ -8438,7 +8438,7 @@ function assertSafeProxyTarget(targetStr, env) {
   return null; // ok
 }
 
-async function fetchImageThroughProxy(targetStr, env, ctx) {
+async function fetchImageThroughProxy(targetStr, env, ctx, referer) {
   let current = targetStr;
   for (let hop = 0; hop <= IMG_PROXY_MAX_REDIRECTS; hop++) {
     const err = assertSafeProxyTarget(current, env);
@@ -8447,10 +8447,12 @@ async function fetchImageThroughProxy(targetStr, env, ctx) {
       const ips = await resolveHostToIPs(new URL(current).hostname);
       if (ips.length && ips.every(isPrivateIp)) return { status: 403, body: null }; // 全私网，拒
     }
-    const resp = await fetch(current, { method: 'GET', redirect: 'manual', headers: {
+    const headers = {
       'User-Agent': 'Mozilla/5.0 (compatible; XinBlog-ImgProxy/1.0)',
       Accept: 'image/avif,image/webp,image/*,*/*;q=0.8',
-    }});
+    };
+    if (referer) headers.Referer = referer; // CDN 防盗链拒绝空 Referer 后，回源仍需带站点 Referer
+    const resp = await fetch(current, { method: 'GET', redirect: 'manual', headers });
     if (resp.status >= 300 && resp.status < 400 && resp.headers.get('location')) {
       current = new URL(resp.headers.get('location'), current).href; // 相对/绝对都兼容
       continue; // 下一跳重新校验
@@ -8515,7 +8517,7 @@ async function proxyOgImage(request, env, ctx) {
     return jsonResponse(429, null, '图片代理请求过于频繁，请稍后再试', 429);
   }
 
-  const result = await fetchImageThroughProxy(target, env, ctx); // §4.4
+  const result = await fetchImageThroughProxy(target, env, ctx, url.origin + '/'); // §4.4：回源带站点 Referer，兼容 CDN 关闭空 Referer
   if (result.status !== 200 || !result.resp) {
     // —— 失败回退：302 到原始图 URL，绝不缺图 ——
     return new Response(null, { status: 302, headers: { Location: target } });
